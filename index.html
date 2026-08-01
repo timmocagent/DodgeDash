@@ -96,7 +96,7 @@
     <button class="big-btn" id="startBtn">开始</button>
     <div class="hint">
       移动：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd><br>
-      触屏拖动即可移动 &middot; <kbd>E</kbd> 放下炸弹 &middot; <kbd>P</kbd> 暂停<br>
+      触屏拖动即可移动 &middot; 双指轻触 = 放下炸弹 &middot; <kbd>E</kbd> 放下炸弹 &middot; <kbd>P</kbd> 暂停<br>
       你没有武器。敌人的攻击击中炸弹会将其引爆 &mdash; 快跑开！
     </div>
   </div>
@@ -229,6 +229,8 @@ let player = null;
 let hammers = [], blacks = [], snakes = [], turrets = [], bullets = [], spikes = [], bombs = [];
 let particles = [], shockwaves = [], popups = [];
 let bombTimer = 1.5, hammerTimer = 3;
+let pickups = [], pickupTimer = rand(8, 14);
+const PICKUP_TYPES = ['heal', 'shield', 'speed', 'bomb'];
 let stats = { hammers: 0, blacks: 0, turrets: 0, boss: 0 };
 let hintText = '', hintTimer = 0;
 let orbs = [], orbTimer = rand(40, 55), orbsSpawned = 0, orbMax = 3, pityActive = false;
@@ -286,6 +288,7 @@ const sfx = {
   drop() { tone(280, 0.12, 'sine', 0.08, 160); },
   explosion() { noise(0.5, 0.3); tone(80, 0.5, 'sine', 0.3, 28); },
   hammer() { noise(0.15, 0.16); tone(110, 0.16, 'square', 0.18, 55); },
+  wind() { noise(0.8, 0.07); tone(95, 0.8, 'sine', 0.05, 42); },
   freeze() { tone(1600, 0.35, 'sine', 0.07, 280); },
   split() { tone(220, 0.12, 'sawtooth', 0.12, 90); tone(330, 0.12, 'sawtooth', 0.1, 120, 0.1); },
   upgrade() { [440, 660, 880, 1320].forEach((f, i) => tone(f, 0.16, 'triangle', 0.11, undefined, i * 0.09)); },
@@ -318,25 +321,37 @@ window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { if (state === 'playing') pauseGame(); });
 document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'playing') pauseGame(); });
 
-const touch = { active: false, lx: 0, ly: 0 };
+const touch = { active: false, mainId: null, count: 0, lx: 0, ly: 0 };
 canvas.addEventListener('pointerdown', e => {
-  touch.active = true;
-  touch.lx = e.clientX;
-  touch.ly = e.clientY;
+  touch.count++;
+  if (!touch.active) {
+    touch.active = true;
+    touch.mainId = e.pointerId;
+    touch.lx = e.clientX;
+    touch.ly = e.clientY;
+  } else if (state === 'playing' && player && player.carrying.length) {
+    // second finger while the first is dragging → drop a bomb immediately
+    dropBomb();
+    showHint('已放下炸弹', 1.6);
+  }
   if (canvas.setPointerCapture) { try { canvas.setPointerCapture(e.pointerId); } catch (err) {} }
 });
 canvas.addEventListener('pointermove', e => {
-  if (!touch.active || state !== 'playing' || !player) return;
+  if (e.pointerId !== touch.mainId || !touch.active || state !== 'playing' || !player) return;
   const dx = e.clientX - touch.lx, dy = e.clientY - touch.ly;
   touch.lx = e.clientX; touch.ly = e.clientY;
-  if (player.frozen <= 0) {
+  const pushed = hammers.some(h => h.pushingPlayer && h.state === 'strike');
+  if (player.frozen <= 0 && !pushed) {
     player.x += dx; player.y += dy;
     player.vy = clamp(dy * 60, -260, 260);
     clampPlayer();
   }
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev =>
-  canvas.addEventListener(ev, () => { touch.active = false; })
+  canvas.addEventListener(ev, e => {
+    touch.count = Math.max(0, touch.count - 1);
+    if (e.pointerId === touch.mainId) { touch.active = false; touch.mainId = null; }
+  })
 );
 dropBtn.addEventListener('pointerdown', e => { e.preventDefault(); if (state === 'playing') dropBomb(); });
 pauseBtn.addEventListener('click', () => { if (state === 'playing' || state === 'paused') togglePause(); });
@@ -345,16 +360,16 @@ resumeBtn.addEventListener('click', () => { if (state === 'paused') togglePause(
 /* ---------------- Player ---------------- */
 function makePlayer() {
   return {
-    x: W * 0.22, y: H * 0.5, r: 14,
+    x: W * 0.5, y: H * 0.72, r: 14,
     baseSpeed: 230, speedMul: 1, maxHp: 6, hp: 6,
-    invuln: 0, shield: 0.8, frozen: 0, carrying: null, dead: false, bob: 0,
+    invuln: 0, shield: 0.8, frozen: 0, carrying: [], carryCap: 1, dead: false, bob: 0,
     vy: 0, engT: 0
   };
 }
 function clampPlayer() {
   const p = player;
   p.x = clamp(p.x, 20, W - 20);
-  p.y = clamp(p.y, H * 0.1, groundY - 16);
+  p.y = clamp(p.y, H * 0.12, H - 78);
 }
 function damagePlayer(amount, sx, sy) {
   const p = player;
@@ -383,27 +398,32 @@ function freezePlayer(dur) {
 }
 
 /* ---------------- Bombs ---------------- */
+function carryOffset(slot) {
+  return { x: 18 + slot * 8, y: -12 + slot * 6 };
+}
 function spawnBomb() {
-  const x = rand(30, W - 20), y = rand(H * 0.25, groundY - 36);
-  bombs.push({ x, y, px: 0, py: 0, r: 11, vy: rand(6, 11), vx: -rand(16, 24), carried: false, noPickup: 0, exploded: false, wob: rand(0, TAU) });
+  const x = rand(30, W - 20), y = rand(H * 0.25, H - 150);
+  bombs.push({ x, y, px: 0, py: 0, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: rand(0, TAU) });
 }
 function bombScreenX(b) { return b.carried ? b.px : b.x; }
 function bombScreenY(b) { return b.carried ? b.py : b.y; }
 function pickBomb(b) {
-  if (player.carrying) return;
+  if (player.carrying.length >= player.carryCap) return;
   b.carried = true;
-  player.carrying = b;
-  b.px = player.x + 16; b.py = player.y - 8;
+  player.carrying.push(b);
+  b.slot = player.carrying.length - 1;
+  const off = carryOffset(b.slot);
+  b.px = player.x + off.x; b.py = player.y + off.y;
   sfx.pickup();
   addPopup(player.x, player.y - 30, '已拾取炸弹', '#ff9e2c');
 }
 function dropBomb() {
-  const p = player, b = p.carrying;
-  if (!b || state !== 'playing') return;
+  const p = player;
+  if (!p.carrying.length || state !== 'playing') return;
+  const b = p.carrying.pop();
   b.carried = false;
-  p.carrying = null;
   b.x = b.px; b.y = b.py;
-  b.vy = 26; b.noPickup = 0.5;
+  b.vx = 0; b.vy = 0; b.noPickup = 0.5;
   sfx.drop();
   addPopup(b.x, b.y - 20, '放下炸弹', '#ff9e2c');
 }
@@ -419,7 +439,8 @@ function updateBombs(dt) {
     if (b.exploded) continue;
     if (b.carried) {
       p.bob += dt * 5;
-      const tx = p.x + 16, ty = p.y - 8 + Math.sin(p.bob) * 3;
+      const off = carryOffset(b.slot);
+      const tx = p.x + off.x, ty = p.y + off.y + Math.sin(p.bob + b.slot) * 3;
       const carrySpeed = bombRadiusUp > 0 ? 16 : 8; // 'Bomb Mastery' upgrade = faster carry
       b.px += (tx - b.px) * Math.min(1, carrySpeed * dt);
       b.py += (ty - b.py) * Math.min(1, carrySpeed * dt);
@@ -427,10 +448,10 @@ function updateBombs(dt) {
     }
     b.noPickup = Math.max(0, b.noPickup - dt);
     b.x += b.vx * dt; b.y += b.vy * dt; b.wob += dt * 2;
-    if (b.noPickup <= 0 && !p.dead && p.carrying === null && dist(p, { x: b.x, y: b.y }) < 44) { pickBomb(b); continue; }
+    if (b.noPickup <= 0 && !p.dead && p.carrying.length < p.carryCap && dist(p, { x: b.x, y: b.y }) < 44) { pickBomb(b); continue; }
     if (b.y > H + 30 || b.x < -50) removeBomb(b);
   }
-  dropBtn.classList.toggle('active', !!p.carrying);
+  dropBtn.classList.toggle('active', p.carrying.length > 0);
 }
 function removeBomb(b) { const i = bombs.indexOf(b); if (i >= 0) bombs.splice(i, 1); }
 function explodeBomb(b) {
@@ -438,7 +459,8 @@ function explodeBomb(b) {
   b.exploded = true;
   const sx = bombScreenX(b), sy = bombScreenY(b);
   const rad = Math.min(108, 72 * (1 + 0.3 * bombRadiusUp));
-  if (player.carrying === b) player.carrying = null;
+  const ci = player.carrying.indexOf(b);
+  if (ci >= 0) player.carrying.splice(ci, 1);
   removeBomb(b);
   shake = Math.min(shake + 16, 26);
   sfx.explosion();
@@ -488,6 +510,9 @@ function explodeBomb(b) {
 
 /* ---------------- Hammers: rectangular ELITE units (4-column) ---------------- */
 const ELITE_COLS = 4;
+const HAMMER_TOP = -160;
+const HAMMER_STRIKE_DUR = 0.85;
+const HAMMER_RAISE_DUR = 0.9;
 function pickHammerColumns(count) {
   const cols = [0, 1, 2, 3];
   for (let i = cols.length - 1; i > 0; i--) {
@@ -504,12 +529,13 @@ function spawnHammerAt(col) {
   const h = {
     col: clamp(Math.round(col), 0, ELITE_COLS - 1),
     x: (clamp(Math.round(col), 0, ELITE_COLS - 1) + 0.5) * colW,
-    y: -140,
-    hw: W * 0.11, hh: 30,
+    y: HAMMER_TOP,
+    hw: W * 0.14, hh: 40,
     hp: 2, maxHp: 2, cracked: false,
-    targetY: groundY - 60,
-    state: 'telegraph', timer: rand(0.5, 1.2),
-    frozen: 0, impacted: false
+    targetY: H - 88,
+    state: 'telegraph', timer: rand(0.8, 1.4),
+    frozen: 0, impacted: false,
+    dmg: 0, hitPlayer: false, pushingPlayer: false, pushDone: false
   };
   hammers.push(h);
   showHint('精英锤兵 来袭！', 3.5);
@@ -520,31 +546,77 @@ function spawnHammerElite() {
   const free = [0, 1, 2, 3].filter(c => !occupied.includes(c));
   if (!free.length) return null;
   const h = spawnHammerAt(pick(free));
-  h.state = 'telegraph'; h.timer = rand(1.2, 2);
+  h.state = 'telegraph'; h.timer = rand(1.6, 2.4);
   return h;
 }
 function hammerPos(h) {
   if (h.state === 'strike') {
-    const p = clamp(1 - h.timer / 0.5, 0, 1);
-    return { x: h.x, y: -140 + (h.targetY + 140) * easeOut(p) };
+    const p = clamp(1 - h.timer / HAMMER_STRIKE_DUR, 0, 1);
+    return { x: h.x, y: HAMMER_TOP + (h.targetY - HAMMER_TOP) * easeOut(p) };
   }
   if (h.state === 'raise') {
-    const p = clamp(1 - h.timer / 0.6, 0, 1);
-    return { x: h.x, y: h.targetY - (h.targetY + 140) * easeOut(p) };
+    const p = clamp(1 - h.timer / HAMMER_RAISE_DUR, 0, 1);
+    return { x: h.x, y: h.targetY - (h.targetY - HAMMER_TOP) * easeOut(p) };
   }
-  return { x: h.x, y: -140 };
+  return { x: h.x, y: HAMMER_TOP };
+}
+function hammerHitPlayer(h, amount) {
+  const p = player;
+  if (state !== 'playing' || !p || p.dead) return;
+  const allow = Math.min(amount, 2 - h.dmg); // one hammer event can never cost more than 2 HP
+  if (allow <= 0) return;
+  h.dmg += allow;
+  p.hp -= allow;
+  hitFlash = 1;
+  shake = Math.min(shake + 8, 20);
+  sfx.hurt();
+  addPopup(p.x, p.y - 26, '-' + allow + ' 生命', '#ff5c9d');
+  p.invuln = Math.max(p.invuln, p.shield);
+  if (p.hp <= 0) { p.hp = 0; p.dead = true; gameOver(); }
 }
 function updateHammers(dt) {
   for (const h of [...hammers]) {
-    if (h.frozen > 0) { h.frozen -= dt; continue; }
+    if (h.frozen > 0) {
+      h.frozen -= dt;
+      h.pushingPlayer = false;
+      continue;
+    }
     h.timer -= dt;
     if (h.state === 'telegraph') {
-      if (h.timer <= 0) { h.state = 'strike'; h.timer = 0.5; h.impacted = false; }
+      if (h.timer <= 0) {
+        h.state = 'strike'; h.timer = HAMMER_STRIKE_DUR;
+        h.dmg = 0; h.hitPlayer = false; h.pushingPlayer = false; h.pushDone = false;
+        h.impacted = false;
+        sfx.wind();
+      }
     } else if (h.state === 'strike') {
-      if (!h.impacted && 1 - h.timer / 0.5 >= 0.92) { h.impacted = true; hammerImpact(h); }
-      if (h.timer <= 0) { h.state = 'raise'; h.timer = 0.6; }
+      // heavy fall: faint rumble while the hammer is coming down
+      if (h.timer > 0.25) shake = Math.min(shake + 1.8 * dt, 14);
+      const hp = hammerPos(h);
+      const p = player;
+      if (p && !p.dead && Math.abs(p.x - h.x) < h.hw + p.r && Math.abs(p.y - hp.y) < h.hh + p.r) {
+        if (!h.hitPlayer) {
+          h.hitPlayer = true;
+          if (p.y >= h.targetY - h.hh * 1.4) {
+            // player already in the landing zone → single 2 HP hit
+            hammerHitPlayer(h, 2);
+            h.pushDone = true;
+          } else {
+            // contact while falling: 1 HP now, push down, 1 HP at the bottom
+            hammerHitPlayer(h, 1);
+            h.pushingPlayer = true;
+          }
+        } else if (h.pushingPlayer && !h.pushDone) {
+          const landing = h.targetY - h.hh * 0.5;
+          const target = hp.y + h.hh * 0.9;
+          p.y = Math.min(Math.max(target, p.y), landing);
+          if (p.y >= landing) { h.pushDone = true; hammerHitPlayer(h, 1); }
+        }
+      }
+      if (!h.impacted && 1 - h.timer / HAMMER_STRIKE_DUR >= 0.92) { h.impacted = true; hammerImpact(h); }
+      if (h.timer <= 0) { h.state = 'raise'; h.timer = HAMMER_RAISE_DUR; h.pushingPlayer = false; }
     } else if (h.state === 'raise') {
-      if (h.timer <= 0) { h.state = 'telegraph'; h.timer = rand(0.5, 1.1); }
+      if (h.timer <= 0) { h.state = 'telegraph'; h.timer = rand(1.0, 1.6); }
     }
   }
 }
@@ -554,7 +626,6 @@ function hammerImpact(h) {
   sfx.hammer();
   addShockwave(zx, zy, h.hw * 1.6);
   addBurst(zx, zy, 16, '#c9fbff', 180, 0.35);
-  if (!player.dead && dist(player, { x: zx, y: zy }) < h.hw + player.r) damagePlayer(2, zx, zy);
   for (const b of [...bombs]) {
     if (!b.exploded && dist({ x: bombScreenX(b), y: bombScreenY(b) }, { x: zx, y: zy }) < h.hw + 14) explodeBomb(b);
   }
@@ -590,9 +661,9 @@ function destroyHammer(h) {
 /* ---------------- Black Monsters (farmable) ---------------- */
 function spawnBlack(stage) {
   return {
-    stage, x: rand(40, W - 40), y: stage === 1 ? groundY - 24 : -40,
+    stage, x: rand(40, W - 40), y: -40,
     r: stage === 1 ? 18 : (stage === 2 ? 22 : 24),
-    hp: 3 * stage, maxHp: 3 * stage, sleeping: stage === 1, wakeAt: rand(18, 26),
+    hp: 3 * stage, maxHp: 3 * stage, sleeping: stage === 1, wakeAt: rand(5, 9),
     timer: rand(0, TAU), ang: stage === 2 ? Math.PI / 2 : 0, frozen: 0, respawnIn: 0, zz: rand(0, TAU)
   };
 }
@@ -649,17 +720,20 @@ function killBlack(bk) {
 
 /* ---------------- Boss: Red Snake ---------------- */
 function makeSnake(segs, stage2, spacing) {
-  return { segments: segs, timer: rand(0, TAU), frozen: 0, spikeTimer: 0.3, stage2: !!stage2, spacing: spacing || 34 };
+  const head = segs[0];
+  const headAng = player ? Math.atan2(player.y - head.y, player.x - head.x) : Math.PI / 2;
+  return { segments: segs, timer: rand(0, TAU), frozen: 0, spikeTimer: 0.3, stage2: !!stage2, spacing: spacing || 34, headAng, distAcc: 0 };
 }
 function spawnBoss() {
   const segs = [];
-  const startY = groundY - 150;
+  const startX = W * 0.5;
+  const headY = Math.max(H * 0.12 + 20, 120);
   for (let i = 0; i < 10; i++) {
-    segs.push({ x: W + 80 + i * 34, y: startY + Math.sin(i * 0.9) * 14, r: i === 0 ? 14 : 11, hp: 2 });
+    segs.push({ x: startX + Math.sin(i * 0.9) * 14, y: headY - i * 34, r: i === 0 ? 14 : 11, hp: 2 });
   }
   snakes.push(makeSnake(segs, false));
   bossMaxHp = 10 * 2;
-  addPopup(W * 0.6, H * 0.3, '红蛇王', '#ff2d78');
+  addPopup(W * 0.5, H * 0.3, '红蛇王', '#ff2d78');
 }
 function totalBossHp() {
   let t = 0;
@@ -671,11 +745,23 @@ function updateSnakes(dt) {
   for (const s of [...snakes]) {
     if (s.frozen > 0) { s.frozen -= dt; continue; }
     const head = s.segments[0];
-    const a = Math.atan2(p.y - head.y, p.x - head.x);
-    head.x += Math.cos(a) * 125 * dt;
-    head.y += Math.sin(a) * 125 * dt;
+    // snake-like turning: only up to ~12° per ~30px traveled, with inertia
+    const speed = 125 * 0.75; // 25% slower than before
+    const step = speed * dt;
+    head.x += Math.cos(s.headAng) * step;
+    head.y += Math.sin(s.headAng) * step;
+    s.distAcc += step;
+    if (s.distAcc >= 30) {
+      s.distAcc -= 30;
+      const a = Math.atan2(p.y - head.y, p.x - head.x);
+      s.headAng = turnToward(s.headAng, a, 12 * Math.PI / 180);
+    }
     head.x = clamp(head.x, -80, W + 80);
     head.y = clamp(head.y, H * 0.12, groundY - 8);
+    // contact damage: any segment touching the player costs 1 HP (with knockback + i-frames)
+    for (const seg of s.segments) {
+      if (!p.dead && dist(p, seg) < seg.r + p.r) damagePlayer(1, seg.x, seg.y);
+    }
     for (let i = 1; i < s.segments.length; i++) {
       const prev = s.segments[i - 1], seg = s.segments[i];
       const ox = Math.sin(s.timer * 5 + i * 0.9) * 5, oy = Math.cos(s.timer * 5 + i * 0.9) * 5;
@@ -743,31 +829,30 @@ function processSnakeDeaths(s) {
 
 /* ---------------- Freeze Turret ---------------- */
 function spawnTurret() {
-  turrets.push({ x: W * 0.72, y: groundY, r: 18, hp: 3, ang: -Math.PI / 2, state: 'charge', timer: 0.6, fireAng: 0, frozen: 0 });
+  turrets.push({ x: W * 0.72, y: 44, r: 18, hp: 3, ang: Math.PI / 2, state: 'cooldown', timer: rand(8, 10), fireAng: 0, frozen: 0 });
 }
 function updateTurret(dt) {
   const p = player;
   for (const t of [...turrets]) {
     if (t.frozen > 0) { t.frozen -= dt; continue; }
     const ta = Math.atan2(p.y - t.y, p.x - t.x);
-    if (t.state === 'charge') {
-      t.ang = turnToward(t.ang, ta, 1.8 * dt);
+    if (t.state === 'cooldown') {
+      // long cooldown (8-10s): completely no laser
       t.timer -= dt;
-      if (t.timer <= 0) { t.state = 'lock'; t.timer = 1.1; sfx.freeze(); }
-    } else if (t.state === 'lock') {
+      if (t.timer <= 0) { t.state = 'aim'; t.timer = 3; sfx.freeze(); }
+    } else if (t.state === 'aim') {
+      // 3s aim: rotating laser locks onto the player
+      t.ang = turnToward(t.ang, ta, 1.6 * dt);
       t.timer -= dt;
-      if (t.timer <= 0) { t.state = 'fire'; t.timer = 0.25; }
+      if (t.timer <= 0) { t.state = 'fire'; t.timer = 0.3; }
     } else if (t.state === 'fire') {
       t.timer -= dt;
       if (t.timer <= 0) {
         t.fireAng = t.ang;
-        spawnBullet(t.x + Math.cos(t.ang) * 26, t.y + Math.sin(t.ang) * 26, t.ang);
-        t.state = 'reload';
-        t.timer = 1.3;
+        spawnBullet(t.x + Math.cos(t.ang) * 26, t.y + Math.sin(t.ang) * 26, t.ang, 90);
+        t.state = 'cooldown';
+        t.timer = rand(8, 10);
       }
-    } else if (t.state === 'reload') {
-      t.timer -= dt;
-      if (t.timer <= 0) { t.state = 'charge'; t.timer = 0.7; }
     }
   }
 }
@@ -781,8 +866,9 @@ function destroyTurret(t) {
 }
 
 /* ---------------- Bullets & Spikes ---------------- */
-function spawnBullet(x, y, ang) {
-  bullets.push({ x, y, vx: Math.cos(ang) * 150, vy: Math.sin(ang) * 150, r: 7, life: 6 });
+function spawnBullet(x, y, ang, speed) {
+  const sp = speed || 150;
+  bullets.push({ x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp, r: 7, life: 6 });
 }
 function removeBullet(b) { const i = bullets.indexOf(b); if (i >= 0) bullets.splice(i, 1); }
 function updateBullets(dt) {
@@ -879,7 +965,7 @@ function spawnOrb(over) {
   orbsSpawned++;
   const bonus = over && over.bonus !== undefined ? over.bonus : pityActive;
   pityActive = false;
-  const fromTop = over && over.fromTop !== undefined ? over.fromTop : Math.random() < 0.6;
+  const fromTop = over && over.fromTop !== undefined ? over.fromTop : true;
   const o = {
     x: fromTop ? rand(70, W - 70) : W + 40,
     y: fromTop ? -40 : rand(H * 0.3, groundY - 120),
@@ -951,6 +1037,80 @@ function collectOrb(o) {
   }
 }
 
+/* ---------------- Pickups (weighted by player state) ---------------- */
+const PICKUP_COLOR = { heal: '#ff5c9d', shield: '#00f6ff', speed: '#38ffb0', bomb: '#ff9e2c' };
+const PICKUP_LABEL = { heal: '血', shield: '盾', speed: '速', bomb: '弹' };
+function pickupWeights() {
+  const p = player;
+  if (!p) return { heal: 0.25, shield: 0.25, speed: 0.25, bomb: 0.25 };
+  const hpFrac = p.hp / p.maxHp;
+  const hasShield = p.invuln > 0 || p.shield >= 3;
+  if (hpFrac < 0.5) return { heal: 0.5, shield: 0.17, speed: 0.165, bomb: 0.165 };
+  if (!hasShield) return { heal: 0.2, shield: 0.4, speed: 0.2, bomb: 0.2 };
+  return { heal: 0.2, shield: 0.2, speed: 0.3, bomb: 0.3 };
+}
+function weightedPickupType() {
+  const w = pickupWeights();
+  let r = Math.random();
+  for (const t of PICKUP_TYPES) {
+    r -= w[t];
+    if (r <= 0) return t;
+  }
+  return 'heal';
+}
+function spawnPickup(type, x, y) {
+  const pu = {
+    type: type || weightedPickupType(),
+    x: x !== undefined ? x : rand(40, W - 40),
+    y: y !== undefined ? y : -30,
+    r: 13, vy: rand(45, 70), wob: rand(0, TAU), life: 0
+  };
+  pickups.push(pu);
+  return pu;
+}
+function updatePickups(dt) {
+  if (state === 'playing' && pickups.length < 3) {
+    pickupTimer -= dt;
+    if (pickupTimer <= 0) { pickupTimer = rand(9, 15); spawnPickup(); }
+  }
+  const p = player;
+  for (const pu of [...pickups]) {
+    pu.y += pu.vy * dt;
+    pu.wob += dt * 3;
+    pu.life += dt;
+    if (p && !p.dead && dist(p, pu) < pu.r + p.r + 10) {
+      applyPickup(pu);
+      const i = pickups.indexOf(pu);
+      if (i >= 0) pickups.splice(i, 1);
+      continue;
+    }
+    if (pu.y > H + 30 || pu.life > 18) {
+      const i = pickups.indexOf(pu);
+      if (i >= 0) pickups.splice(i, 1);
+    }
+  }
+}
+function applyPickup(pu) {
+  const p = player;
+  if (!p || p.dead) return;
+  let text = '';
+  if (pu.type === 'heal') {
+    p.hp = Math.min(p.maxHp, p.hp + 1);
+    text = '+1 生命';
+  } else if (pu.type === 'shield') {
+    p.invuln = Math.max(p.invuln, 3);
+    text = '护盾 3 秒';
+  } else if (pu.type === 'speed') {
+    p.speedMul = Math.min(1.9, p.speedMul + 0.1);
+    text = '速度 +10%';
+  } else if (pu.type === 'bomb') {
+    p.carryCap = Math.min(3, p.carryCap + 1);
+    text = '炸弹容量 +1';
+  }
+  addPopup(p.x, p.y - 34, text, PICKUP_COLOR[pu.type]);
+  sfx.upgrade();
+}
+
 /* ---------------- Level progression ---------------- */
 function updateLevel(dt) {
   if (elapsed >= 24 && phase < 2) {
@@ -970,7 +1130,7 @@ function updateLevel(dt) {
   if (phase >= 2 && !blackSpawned) { blackSpawned = true; blacks.push(spawnBlack(1)); }
   if (!bossDefeated && hammers.length < 2) {
     hammerTimer -= dt;
-    if (hammerTimer <= 0) { hammerTimer = rand(5, 8); spawnHammerElite(); }
+    if (hammerTimer <= 0) { hammerTimer = rand(8, 13); spawnHammerElite(); }
   }
 }
 
@@ -987,6 +1147,7 @@ function updateGame(dt) {
   updateSnakes(dt);
   updateSpikes(dt);
   updateOrbs(dt);
+  updatePickups(dt);
   updatePlayer(dt);
   updateParticles(dt);
   updateStars(dt);
@@ -999,7 +1160,10 @@ function updatePlayer(dt) {
   const p = player;
   if (!p || p.dead) return;
   if (p.invuln > 0) p.invuln -= dt;
-  if (p.frozen > 0) {
+  const beingPushed = hammers.some(h => h.pushingPlayer && h.state === 'strike');
+  if (beingPushed) {
+    p.vy = 200; // carried down by the hammer head
+  } else if (p.frozen > 0) {
     p.frozen -= dt;
   } else {
     let dx = 0, dy = 0;
@@ -1019,13 +1183,13 @@ function updatePlayer(dt) {
       p.vy *= Math.max(0, 1 - 8 * dt);
     }
   }
-  // engine trail (jet exhaust toward the left)
+  // engine trail (jet exhaust downward, behind the nose-up plane)
   p.engT -= dt;
   if (p.engT <= 0) {
     p.engT = 0.04;
     particles.push({
-      x: p.x - 14, y: p.y + rand(-2, 2),
-      vx: -rand(60, 150), vy: rand(-14, 14),
+      x: p.x + rand(-2, 2), y: p.y + 15,
+      vx: rand(-14, 14), vy: rand(60, 150),
       life: rand(0.25, 0.5), maxLife: 0.5, size: rand(1.5, 3),
       color: pick(['#00f6ff', '#38ffb0', '#ff9e2c', '#ffffff']), grav: 0
     });
@@ -1033,8 +1197,8 @@ function updatePlayer(dt) {
 }
 function updateStars(dt) {
   for (const s of stars) {
-    s.x -= 30 * s.depth * dt;
-    if (s.x < 0) s.x += W;
+    s.y += (24 + 44 * s.depth) * dt;
+    if (s.y > H + 2) s.y -= H;
     s.tw += dt * 2;
   }
 }
@@ -1053,12 +1217,13 @@ function render() {
   ctx.fillRect(0, 0, W, H);
   if (bgCanvas) ctx.drawImage(bgCanvas, 0, 0, W, H);
   renderStars();
-  renderFloor();
+  renderGrid();
   ctx.save();
   if (shake > 0.3) ctx.translate(rand(-shake, shake) * 0.5, rand(-shake, shake) * 0.5);
   renderSpikes();
   renderBombs();
   renderOrbs();
+  renderPickups();
   renderHammers();
   renderTurret();
   renderBullets();
@@ -1111,6 +1276,29 @@ function renderOrbs() {
     }
   }
 }
+function renderPickups() {
+  for (const pu of pickups) {
+    const col = PICKUP_COLOR[pu.type];
+    const pulse = 1 + Math.sin(pu.wob * 2) * 0.15;
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.arc(pu.x, pu.y, pu.r * 1.5, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(pu.x, pu.y, pu.r * pulse, 0, TAU);
+    ctx.stroke();
+    ctx.fillStyle = col;
+    ctx.font = 'bold 12px ' + GAME_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(PICKUP_LABEL[pu.type], pu.x, pu.y + 1);
+    ctx.shadowBlur = 0;
+  }
+}
 function renderStars() {
   for (const s of stars) {
     const a = 0.35 + 0.4 * Math.abs(Math.sin(s.tw));
@@ -1118,27 +1306,33 @@ function renderStars() {
     ctx.fillRect(s.x, s.y, s.r, s.r);
   }
 }
-function renderFloor() {
-  ctx.fillStyle = 'rgba(0,10,20,0.6)';
-  ctx.fillRect(0, groundY, W, H - groundY);
-  ctx.strokeStyle = 'rgba(0,246,255,0.4)';
-  ctx.lineWidth = 2;
-  ctx.shadowColor = '#00f6ff';
-  ctx.shadowBlur = 10;
+function renderGrid() {
+  // scrolling flight grid: horizontal lines stream downward to suggest forward flight
+  ctx.strokeStyle = 'rgba(0,246,255,0.07)';
+  ctx.lineWidth = 1;
+  const off = (elapsed * 120) % 90;
+  for (let y = -off; y < H + 90; y += 90) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(0,246,255,0.045)';
+  for (let x = 0; x < W; x += 110) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+  // bottom flight boundary
+  ctx.strokeStyle = 'rgba(0,246,255,0.25)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([10, 8]);
   ctx.beginPath();
   ctx.moveTo(0, groundY);
   ctx.lineTo(W, groundY);
   ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = 'rgba(0,246,255,0.08)';
-  ctx.lineWidth = 1;
-  const off = elapsed * 30 % 60;
-  for (let x = -off; x < W; x += 60) {
-    ctx.beginPath();
-    ctx.moveTo(x, groundY + 4);
-    ctx.lineTo(x, H);
-    ctx.stroke();
-  }
+  ctx.setLineDash([]);
 }
 function renderBombs() {
   for (const b of bombs) {
@@ -1175,7 +1369,7 @@ function renderHammers() {
     if (h.state === 'telegraph') {
       const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 90);
       ctx.fillStyle = 'rgba(255,92,157,' + (0.05 * pulse).toFixed(3) + ')';
-      ctx.fillRect(h.x - h.hw, 0, h.hw * 2, groundY);
+      ctx.fillRect(h.x - h.hw, 0, h.hw * 2, H);
       ctx.strokeStyle = 'rgba(255,92,157,' + pulse.toFixed(2) + ')';
       ctx.lineWidth = 2.5;
       ctx.setLineDash([8, 6]);
@@ -1190,7 +1384,7 @@ function renderHammers() {
     }
     // handle: from head top up off-screen
     ctx.strokeStyle = col;
-    ctx.lineWidth = 9;
+    ctx.lineWidth = 12;
     ctx.lineCap = 'round';
     ctx.shadowColor = col;
     ctx.shadowBlur = 8;
@@ -1255,7 +1449,7 @@ function renderTurret() {
   for (const t of turrets) {
     const frozen = t.frozen > 0;
     const col = frozen ? '#7fe9ff' : '#00f6ff';
-    if (t.state === 'lock' || t.state === 'fire') {
+    if (t.state === 'aim' || t.state === 'fire') {
       ctx.strokeStyle = 'rgba(0,246,255,0.18)';
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 6]);
@@ -1283,11 +1477,23 @@ function renderTurret() {
     ctx.moveTo(t.x + Math.cos(t.ang) * 8, t.y + Math.sin(t.ang) * 8);
     ctx.lineTo(t.x + Math.cos(t.ang) * 30, t.y + Math.sin(t.ang) * 30);
     ctx.stroke();
-    if (t.state === 'charge') {
-      const p = 1 - t.timer / 0.6;
-      ctx.fillStyle = 'rgba(255,255,255,' + (0.15 + 0.4 * p).toFixed(2) + ')';
+    if (t.state === 'cooldown') {
+      // cooling ring: no laser during this long phase
+      const p = 1 - clamp(t.timer / 10, 0, 1);
+      ctx.strokeStyle = 'rgba(0,246,255,0.35)';
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(t.x + Math.cos(t.ang) * 30, t.y + Math.sin(t.ang) * 30, 5 + 4 * p, 0, TAU);
+      ctx.arc(t.x, t.y, t.r + 6, -Math.PI / 2, -Math.PI / 2 + TAU * p);
+      ctx.stroke();
+      ctx.font = 'bold 9px ' + GAME_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillStyle = 'rgba(201,251,255,0.75)';
+      ctx.fillText('冷却', t.x, t.y - t.r - 6);
+    } else if (t.state === 'aim') {
+      ctx.fillStyle = 'rgba(255,255,255,' + (0.25 + 0.45 * (0.5 + 0.5 * Math.sin(performance.now() / 90))).toFixed(2) + ')';
+      ctx.beginPath();
+      ctx.arc(t.x + Math.cos(t.ang) * 30, t.y + Math.sin(t.ang) * 30, 6, 0, TAU);
       ctx.fill();
     }
     if (t.state === 'fire') {
@@ -1295,6 +1501,13 @@ function renderTurret() {
       ctx.beginPath();
       ctx.arc(t.x + Math.cos(t.ang) * 30, t.y + Math.sin(t.ang) * 30, 7, 0, TAU);
       ctx.fill();
+    }
+    if (t.state === 'aim') {
+      ctx.strokeStyle = 'rgba(0,246,255,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, t.r + 6, 0, TAU);
+      ctx.stroke();
     }
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#0a1220';
@@ -1472,8 +1685,8 @@ function renderPlayer() {
   const blink = p.invuln > 0 && Math.floor(performance.now() / 90) % 2 === 0;
   ctx.save();
   ctx.translate(p.x, p.y);
-  // pitch: nose up when climbing, nose down when diving (clamped ±15°)
-  ctx.rotate(clamp(p.vy * 0.001, -0.262, 0.262));
+  // vertical view: plane faces UP; pitch tilts the nose down when diving (clamped ±15°)
+  ctx.rotate(-Math.PI / 2 + clamp(p.vy * 0.001, -0.262, 0.262));
   if (p.frozen > 0) {
     ctx.fillStyle = 'rgba(127,233,255,0.2)';
     ctx.beginPath();
@@ -1524,7 +1737,7 @@ function renderPlayer() {
   ctx.closePath();
   ctx.fill();
   ctx.shadowBlur = 0;
-  if (p.carrying) {
+  if (p.carrying.length) {
     ctx.strokeStyle = 'rgba(255,158,44,0.8)';
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 4]);
@@ -1532,6 +1745,13 @@ function renderPlayer() {
     ctx.arc(0, 0, 24, 0, TAU);
     ctx.stroke();
     ctx.setLineDash([]);
+    if (p.carrying.length > 1) {
+      ctx.font = 'bold 11px ' + GAME_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ff9e2c';
+      ctx.fillText('×' + p.carrying.length, 30, -20);
+    }
   }
   ctx.restore();
 }
@@ -1674,13 +1894,14 @@ function renderHUD() {
       ctx.strokeStyle = 'rgba(255,45,120,0.5)';
       ctx.strokeRect(bx, 26, bw, 10);
     }
-    if (player.carrying) {
+    if (player.carrying.length) {
       ctx.textAlign = 'center';
       ctx.font = 'bold 11px ' + GAME_FONT;
       ctx.fillStyle = '#ff9e2c';
       ctx.shadowColor = '#ff9e2c';
       ctx.shadowBlur = 8;
-      ctx.fillText('已拾取炸弹 — 趁它被击中前放下（E / 放下炸弹）！', W / 2, H - 58);
+      const tag = player.carrying.length > 1 ? '已拾取炸弹 ×' + player.carrying.length : '已拾取炸弹';
+      ctx.fillText(tag + ' — 趁它被击中前放下（E / 放下炸弹 / 双指触屏）！', W / 2, H - 58);
       ctx.shadowBlur = 0;
     }
     if (hintTimer > 0 && hintText) {
@@ -1707,6 +1928,7 @@ function resetGame() {
   elapsed = 0; score = 0; kills = 0; upgradesUsed = 0;
   hammers = []; blacks = []; snakes = []; turrets = []; bullets = []; spikes = []; bombs = [];
   particles = []; shockwaves = []; popups = [];
+  pickups = []; pickupTimer = rand(8, 14);
   phase = 1; bossSpawned = false; bossDefeated = false; bossMaxHp = 0;
   bombRadiusUp = 0; bombTimer = 1.5; hammerTimer = 3;
   stats = { hammers: 0, blacks: 0, turrets: 0, boss: 0 };
@@ -1814,16 +2036,25 @@ window.__DODGE = {
   step: (dt) => { if (state === 'playing') updateGame(dt || 1 / 60); render(); },
   damagePlayer: (n) => damagePlayer(n, player.x, player.y + 80),
   heal: () => { player.hp = player.maxHp; player.invuln = 0; player.frozen = 0; },
+  setInvuln: (n) => { player.invuln = n; },
+  setHp: (n) => { player.hp = clamp(n, 0, player.maxHp); },
   drop: () => dropBomb(),
+  placePlayer: (x, y) => { if (player) { player.x = x; player.y = y; clampPlayer(); } },
   stepPlayer: (dx, dy) => { if (player && state === 'playing' && player.frozen <= 0) { player.x += dx; player.y += dy; clampPlayer(); } },
   spawnBombNear: (x, y) => { bombs.push({ x, y, px: x, py: y, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: 0 }); },
   spawnHammerAt: (col) => spawnHammerAt(col == null ? 0 : col),
+  setHammerTimer: (t) => { hammerTimer = t; },
+  bombInfo: () => bombs.map(b => ({ x: b.x, y: b.y, px: b.px, py: b.py, carried: b.carried })),
   explodeAt: (x, y) => {
     const b = { x, y, px: x, py: y, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: 0 };
     bombs.push(b);
     explodeBomb(b);
   },
-  forceHammerStrike: (h) => { if (h) { h.state = 'strike'; h.timer = 0.02; h.impacted = false; } },
+  forceHammerStrike: (col) => {
+    const h = hammers.find(x => x.col === col);
+    if (h) { h.state = 'strike'; h.timer = HAMMER_STRIKE_DUR; h.dmg = 0; h.hitPlayer = false; h.pushingPlayer = false; h.pushDone = false; h.impacted = false; }
+  },
+  hammerInfo: (col) => hammers.filter(h => col === undefined || h.col === col).map(h => ({ col: h.col, x: h.x, targetY: h.targetY, state: h.state, dmg: h.dmg, hitPlayer: h.hitPlayer, pushing: h.pushingPlayer, pushDone: h.pushDone, y: hammerPos(h).y, hw: h.hw, hh: h.hh })),
   spawnBlackNear: (x, y) => { const bk = spawnBlack(1); bk.x = x; bk.y = y; bk.sleeping = false; blacks.push(bk); },
   clearEnemies: () => { hammers = []; turrets = []; snakes = []; bullets = []; spikes = []; },
   forceVictoryReady: () => { hammers = []; turrets = []; snakes = []; bossSpawned = true; bossDefeated = true; },
@@ -1833,13 +2064,24 @@ window.__DODGE = {
   testFreeze: () => freezePlayer(3),
   spawnBossTest: () => { if (!bossSpawned) { bossSpawned = true; spawnBoss(); } },
   midSegment: () => { const s = snakes[0]; return s ? s.segments[Math.floor(s.segments.length / 2)] : null; },
+  snakeInfo: () => snakes.map(s => ({ headAng: s.headAng, distAcc: s.distAcc, headX: s.segments[0].x, headY: s.segments[0].y, speed: 93.75 })),
+  pickupWeights: () => pickupWeights(),
+  weightedPickupType: () => weightedPickupType(),
+  spawnPickup: (type, x, y) => spawnPickup(type, x, y),
+  spawnTurretTest: () => { if (!turretSpawned) { turretSpawned = true; spawnTurret(); } },
+  turretInfo: () => turrets.map(t => ({ state: t.state, timer: t.timer, ang: t.ang, x: t.x, y: t.y })),
+  setTurretState: (st, timer) => { if (turrets[0]) { turrets[0].state = st; turrets[0].timer = timer !== undefined ? timer : 0.01; } },
+  bullets: () => bullets.map(b => ({ x: b.x, y: b.y, vx: b.vx, vy: b.vy, r: b.r, life: b.life })),
+  starsInfo: () => ({ count: stars.length, s0y: stars[0] ? stars[0].y : 0, s0depth: stars[0] ? stars[0].depth : 0 }),
   setKills: (n) => { kills = n; },
   stats: () => ({
     score: Math.floor(score), kills, upgradesUsed, phase,
     hp: player ? player.hp : 0, maxHp: player ? player.maxHp : 0,
-    carrying: !!(player && player.carrying),
+    carrying: player ? player.carrying.length : 0, carryCap: player ? player.carryCap : 0,
     hammers: hammers.length, turrets: turrets.length, snakes: snakes.length, bombs: bombs.length,
-    bossDefeated, bossSpawned, frozen: player ? player.frozen : 0,
+    pickups: pickups.length, turretState: turrets[0] ? turrets[0].state : null,
+    bossDefeated, bossSpawned, frozen: player ? player.frozen : 0, invuln: player ? player.invuln : 0,
+    hint: hintText,
     orbs: orbs.length, energy: Math.floor(energy), pityActive,
     hammerCols: hammers.map(h => h.col),
     px: player ? player.x : 0, py: player ? player.y : 0
