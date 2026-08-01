@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>DODGEDASH — BOMB RUN</title>
+<title>DODGEDASH — 炸弹闯关</title>
 <link rel="icon" href="data:,">
 <style>
   :root{ --cyan:#00f6ff; --pink:#ff2d78; --orange:#ff9e2c; --green:#38ffb0; --bg:#04050c; }
   *{ margin:0; padding:0; box-sizing:border-box; }
   html,body{ width:100%; height:100%; overflow:hidden; background:var(--bg); }
   body{
-    font-family:'Courier New',ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-family:'Courier New',ui-monospace,SFMono-Regular,Menlo,monospace,'PingFang SC','Microsoft YaHei','Noto Sans SC','WenQuanYi Micro Hei',sans-serif;
     color:#c9fbff;
     -webkit-user-select:none; user-select:none;
     -webkit-tap-highlight-color:transparent;
@@ -69,14 +69,6 @@
     color:rgba(201,251,255,0.75); line-height:2.1; }
   #victoryStats b{ color:#38ffb0; }
 
-  #upgradeOptions{ display:flex; gap:14px; margin:20px 0 6px; justify-content:center; flex-wrap:wrap; }
-  .upgrade-opt{ font:inherit; text-align:left; min-width:230px; max-width:320px; padding:18px 20px;
-    border:1px solid rgba(56,255,176,0.5); border-radius:10px; background:rgba(8,14,28,0.9);
-    color:#c9fbff; cursor:pointer; box-shadow:0 0 14px rgba(56,255,176,0.15); transition:transform .1s; }
-  .upgrade-opt:hover{ transform:scale(1.04); box-shadow:0 0 24px rgba(56,255,176,0.45); }
-  .upgrade-opt .u-name{ font-size:16px; letter-spacing:2px; font-weight:700; color:#38ffb0;
-    text-shadow:0 0 8px rgba(56,255,176,0.6); }
-  .upgrade-opt .u-desc{ font-size:11px; margin-top:7px; color:rgba(201,251,255,0.65); line-height:1.6; }
 
   @keyframes panelIn{ from{opacity:0; transform:scale(.92);} to{opacity:1; transform:scale(1);} }
   @media (max-width:600px){
@@ -84,8 +76,6 @@
     h1{ font-size:28px; letter-spacing:5px; }
     .big-num{ font-size:32px; }
     .big-btn{ font-size:14px; padding:14px 30px; }
-    #upgradeOptions{ flex-direction:column; }
-    .upgrade-opt{ min-width:74vw; }
     #dropBtn{ padding:14px 18px; font-size:12px; }
   }
 </style>
@@ -95,61 +85,52 @@
 
 <div id="hudBtns">
   <button class="hud-btn" id="pauseBtn">&#10074;&#10074;</button>
-  <button class="hud-btn" id="muteBtn">SOUND ON</button>
+  <button class="hud-btn" id="muteBtn">声音 开</button>
 </div>
-<button id="dropBtn">DROP BOMB</button>
+<button id="dropBtn">放下炸弹</button>
 
 <div class="overlay" id="menuOverlay">
   <div class="panel">
     <h1>DODGEDASH</h1>
-    <div class="subtitle">CARRY &middot; DROP &middot; SURVIVE</div>
-    <button class="big-btn" id="startBtn">START</button>
+    <div class="subtitle">搬运 &middot; 投掷 &middot; 生存</div>
+    <button class="big-btn" id="startBtn">开始</button>
     <div class="hint">
-      MOVE <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd><br>
-      DRAG ON TOUCH SCREENS &middot; <kbd>E</kbd> DROP BOMB &middot; <kbd>P</kbd> PAUSE<br>
-      YOU HAVE NO WEAPON. BOMBS EXPLODE WHEN ENEMY ATTACKS HIT THEM &mdash; RUN BEFORE THEY DO.
+      移动：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>&uarr;</kbd><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&rarr;</kbd><br>
+      触屏拖动即可移动 &middot; <kbd>E</kbd> 放下炸弹 &middot; <kbd>P</kbd> 暂停<br>
+      你没有武器。敌人的攻击击中炸弹会将其引爆 &mdash; 快跑开！
     </div>
   </div>
 </div>
 
 <div class="overlay hidden" id="pauseOverlay">
   <div class="panel">
-    <div class="paused-text">PAUSED</div>
-    <button class="big-btn" id="resumeBtn" style="margin-top:24px">RESUME</button>
-    <div class="hint">PRESS <kbd>P</kbd> TO RESUME</div>
-  </div>
-</div>
-
-<div class="overlay hidden" id="upgradeOverlay">
-  <div class="panel">
-    <div class="paused-text">LEVEL UP</div>
-    <div class="hint" style="margin-top:8px">CHOOSE ONE UPGRADE</div>
-    <div id="upgradeOptions"></div>
-    <div class="hint"><kbd>1</kbd> / <kbd>2</kbd> TO CHOOSE</div>
+    <div class="paused-text">已暂停</div>
+    <button class="big-btn" id="resumeBtn" style="margin-top:24px">继续</button>
+    <div class="hint">按 <kbd>P</kbd> 继续</div>
   </div>
 </div>
 
 <div class="overlay hidden" id="overOverlay">
   <div class="panel">
-    <h1>GAME OVER</h1>
-    <div class="stat-label">FINAL SCORE</div>
+    <h1>游戏结束</h1>
+    <div class="stat-label">最终得分</div>
     <div class="big-num" id="overScore">0</div>
-    <div class="stat-label">BEST &nbsp;<span id="overBest">0</span></div>
-    <button class="big-btn" id="retryBtn" style="margin-top:24px">RETRY</button>
-    <div class="hint"><kbd>R</kbd> OR <kbd>ENTER</kbd> TO RETRY</div>
+    <div class="stat-label">最佳成绩 &nbsp;<span id="overBest">0</span></div>
+    <button class="big-btn" id="retryBtn" style="margin-top:24px">重试</button>
+    <div class="hint">按 <kbd>R</kbd> 或 <kbd>ENTER</kbd> 重试</div>
   </div>
 </div>
 
 <div class="overlay hidden" id="victoryOverlay">
   <div class="panel">
-    <h1>VICTORY</h1>
-    <div class="subtitle" style="margin-bottom:10px">LEVEL 1 CLEARED</div>
-    <div class="stat-label">SCORE &nbsp;&middot;&nbsp; TIME</div>
+    <h1>通关！</h1>
+    <div class="subtitle" style="margin-bottom:10px">第 1 关 通关</div>
+    <div class="stat-label">得分 &nbsp;&middot;&nbsp; 用时</div>
     <div class="big-num" id="vicScoreTime">0 &middot; 00:00</div>
-    <div class="stat-label">BEST &nbsp;<span id="vicBest">0</span></div>
+    <div class="stat-label">最佳成绩 &nbsp;<span id="vicBest">0</span></div>
     <div id="victoryStats"></div>
-    <div><button class="big-btn" id="vicRetryBtn" style="margin-top:20px">REPLAY LEVEL</button></div>
-    <div class="hint"><kbd>R</kbd> OR <kbd>ENTER</kbd> TO REPLAY</div>
+    <div><button class="big-btn" id="vicRetryBtn" style="margin-top:20px">再玩一次</button></div>
+    <div class="hint">按 <kbd>R</kbd> 或 <kbd>ENTER</kbd> 再来一局</div>
   </div>
 </div>
 
@@ -169,14 +150,14 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const $ = id => document.getElementById(id);
 const muteBtn = $('muteBtn'), pauseBtn = $('pauseBtn'), dropBtn = $('dropBtn');
-const menuOverlay = $('menuOverlay'), pauseOverlay = $('pauseOverlay'), upgradeOverlay = $('upgradeOverlay');
-const upgradeOptionsEl = $('upgradeOptions');
+const menuOverlay = $('menuOverlay'), pauseOverlay = $('pauseOverlay');
 const overOverlay = $('overOverlay'), victoryOverlay = $('victoryOverlay');
 const startBtn = $('startBtn'), resumeBtn = $('resumeBtn'), retryBtn = $('retryBtn'), vicRetryBtn = $('vicRetryBtn');
 const overScore = $('overScore'), overBest = $('overBest');
 const vicScoreTime = $('vicScoreTime'), vicBest = $('vicBest'), victoryStats = $('victoryStats');
 
 const TAU = Math.PI * 2;
+const GAME_FONT = 'Courier New,ui-monospace,SFMono-Regular,Menlo,monospace,"PingFang SC","Microsoft YaHei","Noto Sans SC","WenQuanYi Micro Hei",sans-serif';
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -239,7 +220,7 @@ function buildStars() {
 window.addEventListener('resize', resize);
 
 /* ---------------- State ---------------- */
-let state = 'menu'; // menu | playing | paused | upgrade | over | victory
+let state = 'menu'; // menu | playing | paused | over | victory
 let elapsed = 0, score = 0, best = 0, kills = 0, upgradesUsed = 0;
 let shake = 0, hitFlash = 0, freezeFlash = 0;
 let phase = 1, bossSpawned = false, bossDefeated = false, bossMaxHp = 0;
@@ -250,14 +231,14 @@ let particles = [], shockwaves = [], popups = [];
 let bombTimer = 1.5, hammerTimer = 3;
 let stats = { hammers: 0, blacks: 0, turrets: 0, boss: 0 };
 let hintText = '', hintTimer = 0;
-let upgradeChoices = [], upgradePending = false;
+let orbs = [], orbTimer = rand(40, 55), orbsSpawned = 0, orbMax = 3, pityActive = false;
+let energy = 0;
 let blackSpawned = false, turretSpawned = false;
-const killThresholds = [3, 6, 9];
 const BEST_KEY = 'dodgeDash.best';
 let muted = false;
 try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch (e) {}
 try { muted = localStorage.getItem('dodgeDash.muted') === '1'; } catch (e) {}
-muteBtn.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+muteBtn.textContent = muted ? '声音 关' : '声音 开';
 
 /* ---------------- Audio ---------------- */
 let audioCtx = null, audioReady = false;
@@ -316,7 +297,7 @@ const sfx = {
 function toggleMute() {
   muted = !muted;
   try { localStorage.setItem('dodgeDash.muted', muted ? '1' : '0'); } catch (e) {}
-  muteBtn.textContent = muted ? 'SOUND OFF' : 'SOUND ON';
+  muteBtn.textContent = muted ? '声音 关' : '声音 开';
   if (!muted) { initAudio(); sfx.click(); }
 }
 muteBtn.addEventListener('click', toggleMute);
@@ -332,11 +313,6 @@ window.addEventListener('keydown', e => {
   if ((state === 'over' || state === 'victory') && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR')) { startGame(); return; }
   if ((state === 'playing' || state === 'paused') && (e.code === 'KeyP' || e.code === 'Escape')) { togglePause(); return; }
   if (state === 'playing' && (e.code === 'KeyE' || e.code === 'Space')) { dropBomb(); return; }
-  if (state === 'upgrade') {
-    if (e.code === 'Digit1') pickUpgrade(0);
-    if (e.code === 'Digit2') pickUpgrade(1);
-    return;
-  }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 window.addEventListener('blur', () => { if (state === 'playing') pauseGame(); });
@@ -353,7 +329,11 @@ canvas.addEventListener('pointermove', e => {
   if (!touch.active || state !== 'playing' || !player) return;
   const dx = e.clientX - touch.lx, dy = e.clientY - touch.ly;
   touch.lx = e.clientX; touch.ly = e.clientY;
-  if (player.frozen <= 0) { player.x += dx; player.y += dy; clampPlayer(); }
+  if (player.frozen <= 0) {
+    player.x += dx; player.y += dy;
+    player.vy = clamp(dy * 60, -260, 260);
+    clampPlayer();
+  }
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(ev =>
   canvas.addEventListener(ev, () => { touch.active = false; })
@@ -367,12 +347,13 @@ function makePlayer() {
   return {
     x: W * 0.22, y: H * 0.5, r: 14,
     baseSpeed: 230, speedMul: 1, maxHp: 6, hp: 6,
-    invuln: 0, shield: 0.8, frozen: 0, carrying: null, dead: false, bob: 0
+    invuln: 0, shield: 0.8, frozen: 0, carrying: null, dead: false, bob: 0,
+    vy: 0, engT: 0
   };
 }
 function clampPlayer() {
   const p = player;
-  p.x = clamp(p.x, 20, W * 0.6);
+  p.x = clamp(p.x, 20, W - 20);
   p.y = clamp(p.y, H * 0.1, groundY - 16);
 }
 function damagePlayer(amount, sx, sy) {
@@ -383,7 +364,7 @@ function damagePlayer(amount, sx, sy) {
   hitFlash = 1;
   shake = Math.min(shake + 8, 20);
   sfx.hurt();
-  addPopup(p.x, p.y - 26, '-' + amount + ' HP', '#ff5c9d');
+  addPopup(p.x, p.y - 26, '-' + amount + ' 生命', '#ff5c9d');
   if (sx !== undefined) {
     const a = Math.atan2(p.y - sy, p.x - sx);
     p.x += Math.cos(a) * 16;
@@ -398,12 +379,12 @@ function freezePlayer(dur) {
   player.frozen = Math.max(player.frozen, dur);
   freezeFlash = 1;
   sfx.freeze();
-  addPopup(player.x, player.y - 28, 'FROZEN!', '#7fe9ff');
+  addPopup(player.x, player.y - 28, '被冰冻！', '#7fe9ff');
 }
 
 /* ---------------- Bombs ---------------- */
 function spawnBomb() {
-  const x = rand(W * 0.45, W + 30), y = rand(H * 0.25, groundY - 36);
+  const x = rand(30, W - 20), y = rand(H * 0.25, groundY - 36);
   bombs.push({ x, y, px: 0, py: 0, r: 11, vy: rand(6, 11), vx: -rand(16, 24), carried: false, noPickup: 0, exploded: false, wob: rand(0, TAU) });
 }
 function bombScreenX(b) { return b.carried ? b.px : b.x; }
@@ -414,7 +395,7 @@ function pickBomb(b) {
   player.carrying = b;
   b.px = player.x + 16; b.py = player.y - 8;
   sfx.pickup();
-  addPopup(player.x, player.y - 30, 'BOMB CARRIED', '#ff9e2c');
+  addPopup(player.x, player.y - 30, '已拾取炸弹', '#ff9e2c');
 }
 function dropBomb() {
   const p = player, b = p.carrying;
@@ -424,7 +405,7 @@ function dropBomb() {
   b.x = b.px; b.y = b.py;
   b.vy = 26; b.noPickup = 0.5;
   sfx.drop();
-  addPopup(b.x, b.y - 20, 'DROPPED', '#ff9e2c');
+  addPopup(b.x, b.y - 20, '放下炸弹', '#ff9e2c');
 }
 function updateBombs(dt) {
   bombTimer -= dt;
@@ -456,7 +437,7 @@ function explodeBomb(b) {
   if (b.exploded) return;
   b.exploded = true;
   const sx = bombScreenX(b), sy = bombScreenY(b);
-  const rad = 120 * (1 + 0.3 * bombRadiusUp);
+  const rad = Math.min(108, 72 * (1 + 0.3 * bombRadiusUp));
   if (player.carrying === b) player.carrying = null;
   removeBomb(b);
   shake = Math.min(shake + 16, 26);
@@ -464,10 +445,22 @@ function explodeBomb(b) {
   addShockwave(sx, sy, rad * 1.15);
   addBurst(sx, sy, 42, ['#ff9e2c', '#ffd9a0', '#ffffff'], 220, 0.25);
   // player (no friendly distinction)
-  if (!player.dead && dist(player, { x: sx, y: sy }) < rad + player.r) damagePlayer(2, sx, sy);
-  // hammers
+  // player: only hurt near the blast core (tighter hitbox than enemies)
+  if (!player.dead && dist(player, { x: sx, y: sy }) < rad * 0.55 + player.r) damagePlayer(2, sx, sy);
+  // elite hammers: rectangular hitbox, 2 HP (needs 2 blasts)
   for (const h of [...hammers]) {
-    if (dist(hammerHeadPos(h), { x: sx, y: sy }) < rad + 24) destroyHammer(h);
+    const hp = hammerPos(h);
+    if (Math.abs(sx - h.x) < rad + h.hw && Math.abs(sy - hp.y) < rad + h.hh) {
+      h.frozen = 0;
+      h.hp -= 1;
+      h.cracked = h.hp <= 1;
+      if (h.hp <= 0) destroyHammer(h);
+      else {
+        sfx.split();
+        addPopup(h.x, h.targetY - 46, '精英锤兵 受损！再炸一次！', '#ff5c9d');
+        addBurst(sx, sy, 18, '#ff5c9d', 180, 0.3);
+      }
+    }
   }
   // turrets
   for (const t of [...turrets]) {
@@ -493,49 +486,80 @@ function explodeBomb(b) {
   checkVictory();
 }
 
-/* ---------------- Hammers ---------------- */
-function spawnHammerSpread(n) { for (let i = 0; i < n; i++) spawnHammerAt(W * (i + 0.5) / n); }
-function spawnHammerAt(x) {
+/* ---------------- Hammers: rectangular ELITE units (4-column) ---------------- */
+const ELITE_COLS = 4;
+function pickHammerColumns(count) {
+  const cols = [0, 1, 2, 3];
+  for (let i = cols.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cols[i], cols[j]] = [cols[j], cols[i]];
+  }
+  return cols.slice(0, count);
+}
+function spawnHammerPair() {
+  for (const c of pickHammerColumns(2)) spawnHammerAt(c);
+}
+function spawnHammerAt(col) {
+  const colW = W / ELITE_COLS;
   const h = {
-    x, y: -26, headR: 20, reach: Math.min(W * 0.26, 230), targetY: H * 0.52,
-    side: Math.random() < 0.5 ? -1 : 1, state: 'telegraph', timer: rand(0.3, 1.3),
-    frozen: 0, impacted: false, tx: x, ty: H * 0.52
+    col: clamp(Math.round(col), 0, ELITE_COLS - 1),
+    x: (clamp(Math.round(col), 0, ELITE_COLS - 1) + 0.5) * colW,
+    y: -140,
+    hw: W * 0.11, hh: 30,
+    hp: 2, maxHp: 2, cracked: false,
+    targetY: groundY - 60,
+    state: 'telegraph', timer: rand(0.5, 1.2),
+    frozen: 0, impacted: false
   };
-  computeHammerTarget(h);
   hammers.push(h);
+  showHint('精英锤兵 来袭！', 3.5);
   return h;
 }
-function computeHammerTarget(h) { h.tx = clamp(h.x + h.side * h.reach, 34, W - 34); h.ty = h.targetY; }
-function hammerHeadPos(h) {
-  if (h.state === 'strike') { const prog = 1 - h.timer / 0.18; return { x: h.tx, y: h.ty - (1 - easeOut(prog)) * 90 }; }
-  if (h.state === 'raise') { const prog = 1 - h.timer / 0.55; return { x: h.tx, y: h.ty - 90 * easeOut(prog) }; }
-  return { x: h.tx, y: h.ty - 90 };
+function spawnHammerElite() {
+  const occupied = hammers.map(h => h.col);
+  const free = [0, 1, 2, 3].filter(c => !occupied.includes(c));
+  if (!free.length) return null;
+  const h = spawnHammerAt(pick(free));
+  h.state = 'telegraph'; h.timer = rand(1.2, 2);
+  return h;
+}
+function hammerPos(h) {
+  if (h.state === 'strike') {
+    const p = clamp(1 - h.timer / 0.5, 0, 1);
+    return { x: h.x, y: -140 + (h.targetY + 140) * easeOut(p) };
+  }
+  if (h.state === 'raise') {
+    const p = clamp(1 - h.timer / 0.6, 0, 1);
+    return { x: h.x, y: h.targetY - (h.targetY + 140) * easeOut(p) };
+  }
+  return { x: h.x, y: -140 };
 }
 function updateHammers(dt) {
   for (const h of [...hammers]) {
     if (h.frozen > 0) { h.frozen -= dt; continue; }
     h.timer -= dt;
     if (h.state === 'telegraph') {
-      if (h.timer <= 0) { h.state = 'strike'; h.timer = 0.18; h.impacted = false; }
+      if (h.timer <= 0) { h.state = 'strike'; h.timer = 0.5; h.impacted = false; }
     } else if (h.state === 'strike') {
-      if (h.timer <= 0) { h.state = 'raise'; h.timer = 0.55; }
-      else if (!h.impacted && 1 - h.timer / 0.18 >= 0.5) { h.impacted = true; hammerImpact(h); }
+      if (!h.impacted && 1 - h.timer / 0.5 >= 0.92) { h.impacted = true; hammerImpact(h); }
+      if (h.timer <= 0) { h.state = 'raise'; h.timer = 0.6; }
     } else if (h.state === 'raise') {
-      if (h.timer <= 0) { h.state = 'telegraph'; h.timer = 0.85; h.side *= -1; computeHammerTarget(h); }
+      if (h.timer <= 0) { h.state = 'telegraph'; h.timer = rand(0.5, 1.1); }
     }
   }
 }
 function hammerImpact(h) {
-  const zx = h.tx, zy = h.ty;
-  shake = Math.min(shake + 7, 18);
+  const zx = h.x, zy = h.targetY;
+  shake = Math.min(shake + 9, 20);
   sfx.hammer();
+  addShockwave(zx, zy, h.hw * 1.6);
   addBurst(zx, zy, 16, '#c9fbff', 180, 0.35);
-  if (dist(player, { x: zx, y: zy }) < 42 + player.r) damagePlayer(2, zx, zy);
+  if (!player.dead && dist(player, { x: zx, y: zy }) < h.hw + player.r) damagePlayer(2, zx, zy);
   for (const b of [...bombs]) {
-    if (!b.exploded && dist({ x: bombScreenX(b), y: bombScreenY(b) }, { x: zx, y: zy }) < 46) explodeBomb(b);
+    if (!b.exploded && dist({ x: bombScreenX(b), y: bombScreenY(b) }, { x: zx, y: zy }) < h.hw + 14) explodeBomb(b);
   }
   for (const bk of [...blacks]) {
-    if (dist(bk, { x: zx, y: zy }) < 42 + bk.r) {
+    if (dist(bk, { x: zx, y: zy }) < h.hw + bk.r) {
       wakeBlack(bk);
       const dmg = 4 * (bk.frozen > 0 ? 2 : 1);
       bk.frozen = 0;
@@ -547,7 +571,7 @@ function hammerImpact(h) {
     const frozen = s.frozen > 0;
     let hit = false;
     for (const seg of s.segments) {
-      if (dist(seg, { x: zx, y: zy }) < 42 + seg.r) { seg.hp -= 2 * (frozen ? 2 : 1); hit = true; }
+      if (dist(seg, { x: zx, y: zy }) < h.hw + seg.r) { seg.hp -= 2 * (frozen ? 2 : 1); hit = true; }
     }
     if (hit) { if (frozen) s.frozen = 0; processSnakeDeaths(s); }
   }
@@ -556,16 +580,17 @@ function hammerImpact(h) {
 function destroyHammer(h) {
   const i = hammers.indexOf(h);
   if (i >= 0) hammers.splice(i, 1);
-  score += 150; kills++; stats.hammers++;
-  addPopup(h.tx, h.ty - 20, 'HAMMER DOWN +150', '#ff5c9d');
-  addBurst(h.tx, h.ty, 26, '#ff2d78', 220, 0.3);
-  maybeUpgrade(false);
+  score += 300; kills++; stats.hammers++;
+  addEnergy(15);
+  addPopup(h.x, h.targetY - 46, '精英锤兵 摧毁 +300', '#ff5c9d');
+  addBurst(h.x, h.targetY, 30, '#ff2d78', 220, 0.3);
+  sfx.split();
 }
 
 /* ---------------- Black Monsters (farmable) ---------------- */
 function spawnBlack(stage) {
   return {
-    stage, x: rand(W * 0.2, W * 0.5), y: stage === 1 ? groundY - 24 : -40,
+    stage, x: rand(40, W - 40), y: stage === 1 ? groundY - 24 : -40,
     r: stage === 1 ? 18 : (stage === 2 ? 22 : 24),
     hp: 3 * stage, maxHp: 3 * stage, sleeping: stage === 1, wakeAt: rand(18, 26),
     timer: rand(0, TAU), ang: stage === 2 ? Math.PI / 2 : 0, frozen: 0, respawnIn: 0, zz: rand(0, TAU)
@@ -575,7 +600,7 @@ function wakeBlack(bk) {
   if (!bk.sleeping) return;
   bk.sleeping = false;
   bk.ang = Math.PI / 2;
-  addPopup(bk.x, bk.y - 30, 'WAKE!', '#b967ff');
+  addPopup(bk.x, bk.y - 30, '黑怪苏醒！', '#b967ff');
 }
 function updateBlacks(dt) {
   const p = player;
@@ -606,11 +631,11 @@ function updateBlacks(dt) {
 function respawnBlack(bk) {
   const up = Math.random() < 0.45 && bk.stage < 3;
   if (up) bk.stage++;
-  bk.x = rand(W * 0.2, W * 0.7); bk.y = -44;
+  bk.x = rand(40, W - 40); bk.y = -44;
   bk.hp = 3 * bk.stage; bk.maxHp = 3 * bk.stage;
   bk.sleeping = false; bk.frozen = 0; bk.respawnIn = 0;
   bk.timer = rand(0, TAU); bk.ang = Math.PI / 2; bk.zz = rand(0, TAU);
-  if (up) addPopup(clamp(bk.x, 60, W - 60), H * 0.25, 'STAGE ' + bk.stage + '!', '#b967ff');
+  if (up) addPopup(clamp(bk.x, 60, W - 60), H * 0.25, '阶段 ' + bk.stage + '！', '#b967ff');
 }
 function killBlack(bk) {
   const i = blacks.indexOf(bk);
@@ -619,7 +644,7 @@ function killBlack(bk) {
   score += pts; kills++; stats.blacks++;
   addPopup(bk.x, bk.y - 24, '+' + pts, '#b967ff');
   addBurst(bk.x, bk.y, 30, '#b967ff', 240, 0.3);
-  maybeUpgrade(false);
+  addEnergy(10);
 }
 
 /* ---------------- Boss: Red Snake ---------------- */
@@ -634,7 +659,7 @@ function spawnBoss() {
   }
   snakes.push(makeSnake(segs, false));
   bossMaxHp = 10 * 2;
-  addPopup(W * 0.6, H * 0.3, 'RED KING', '#ff2d78');
+  addPopup(W * 0.6, H * 0.3, '红蛇王', '#ff2d78');
 }
 function totalBossHp() {
   let t = 0;
@@ -672,7 +697,7 @@ function updateSnakes(dt) {
   }
   if (bossSpawned && !bossDefeated && snakes.length === 0) {
     bossDefeated = true;
-    showHint('RED KING DESTROYED! CLEAR HAMMERS + TURRET TO WIN', 5);
+    showHint('红蛇王已被摧毁！清除锤兵与炮台即可通关', 5);
     sfx.split();
   }
   checkVictory();
@@ -706,14 +731,14 @@ function processSnakeDeaths(s) {
     snakes.splice(idx, 1);
     if (partA.length) snakes.push(makeSnake(partA, s.stage2, s.spacing));
     if (partB.length) snakes.push(makeSnake(partB, s.stage2, s.spacing));
-    addPopup(splitSeg.x, splitSeg.y - 26, 'SPLIT!', '#ff5c9d');
+    addPopup(splitSeg.x, splitSeg.y - 26, '分裂！', '#ff5c9d');
     addBurst(splitSeg.x, splitSeg.y, 22, '#ff2d78', 200, 0.3);
     sfx.split();
   } else {
     s.segments = segs.filter(g => g.hp > 0);
     if (s.segments.length === 0) snakes.splice(idx, 1);
   }
-  maybeUpgrade(false);
+  addEnergy(6);
 }
 
 /* ---------------- Freeze Turret ---------------- */
@@ -750,9 +775,9 @@ function destroyTurret(t) {
   const i = turrets.indexOf(t);
   if (i >= 0) turrets.splice(i, 1);
   score += 250; kills++; stats.turrets++;
-  addPopup(t.x, t.y - 30, 'TURRET DOWN +250', '#7fe9ff');
+  addPopup(t.x, t.y - 30, '炮台摧毁 +250', '#7fe9ff');
   addBurst(t.x, t.y, 34, '#00f6ff', 240, 0.3);
-  maybeUpgrade(false);
+  addEnergy(12);
 }
 
 /* ---------------- Bullets & Spikes ---------------- */
@@ -777,7 +802,8 @@ function updateBullets(dt) {
     if (!player.dead && dist(b, player) < b.r + player.r) { freezePlayer(3); consumed = true; }
     if (consumed) { removeBullet(b); continue; }
     for (const h of [...hammers]) {
-      if (dist(b, hammerHeadPos(h)) < b.r + h.headR) { h.frozen = 3; consumed = true; break; }
+      const hp = hammerPos(h);
+      if (Math.abs(b.x - hp.x) < b.r + h.hw && Math.abs(b.y - hp.y) < b.r + h.hh) { h.frozen = 3; consumed = true; break; }
     }
     if (consumed) { removeBullet(b); continue; }
     for (const bk of [...blacks]) {
@@ -841,74 +867,110 @@ function updateParticles(dt) {
 
 /* ---------------- Upgrades ---------------- */
 const UPGRADES = [
-  { id: 'speed', name: 'MOVE SPEED +20%', desc: 'Faster movement. Stacks up to +60%.', avail: () => player.speedMul < 1.6, apply: () => { player.speedMul += 0.2; showHint('MOVE SPEED +20%', 2.5); } },
-  { id: 'maxhp', name: 'MAX HP +2', desc: 'Max HP +2 and restore 1 heart.', avail: () => player.maxHp < 10, apply: () => { player.maxHp += 2; player.hp = Math.min(player.maxHp, player.hp + 2); showHint('MAX HP +2', 2.5); } },
-  { id: 'bomb', name: 'BOMB MASTERY', desc: 'Faster bomb carry + 30% blast radius. Stacks.', avail: () => bombRadiusUp < 2, apply: () => { bombRadiusUp++; showHint('BLAST RADIUS +30%', 2.5); } },
-  { id: 'shield', name: 'SHIELD 3s', desc: '3s invulnerability after damage. Upgrade: 5s.', avail: () => player.shield < 5, apply: () => { player.shield = player.shield >= 3 ? 5 : 3; showHint(player.shield >= 5 ? 'SHIELD 5s' : 'SHIELD 3s', 2.5); } }
+  { id: 'speed', name: '速度 +20%', desc: '移动速度提升，最多叠加至 +60%。', avail: () => player.speedMul < 1.6, apply: () => { player.speedMul += 0.2; showHint('速度 +20%', 2.5); } },
+  { id: 'maxhp', name: '生命上限 +2', desc: '生命上限 +2 并恢复 2 点生命。', avail: () => player.maxHp < 10, apply: () => { player.maxHp += 2; player.hp = Math.min(player.maxHp, player.hp + 2); showHint('生命上限 +2', 2.5); } },
+  { id: 'bomb', name: '炸弹精通', desc: '搬运加速，爆炸范围 +30%（最多 +50%）。', avail: () => bombRadiusUp < 2, apply: () => { bombRadiusUp++; showHint('爆炸范围 +30%', 2.5); } },
+  { id: 'shield', name: '护盾 3 秒', desc: '受伤后 3 秒无敌，可升级为 5 秒。', avail: () => player.shield < 5, apply: () => { player.shield = player.shield >= 3 ? 5 : 3; showHint(player.shield >= 5 ? '护盾 5 秒' : '护盾 3 秒', 2.5); } }
 ];
-function maybeUpgrade(force) {
-  if (upgradePending || state !== 'playing' || upgradesUsed >= 3) return;
-  if (force || kills >= killThresholds[upgradesUsed]) triggerUpgrade();
+function addEnergy(n) { energy = Math.min(100, energy + n); }
+
+/* ---------------- Power orbs (Contra-style, no popup) ---------------- */
+function spawnOrb(over) {
+  orbsSpawned++;
+  const bonus = over && over.bonus !== undefined ? over.bonus : pityActive;
+  pityActive = false;
+  const fromTop = over && over.fromTop !== undefined ? over.fromTop : Math.random() < 0.6;
+  const o = {
+    x: fromTop ? rand(70, W - 70) : W + 40,
+    y: fromTop ? -40 : rand(H * 0.3, groundY - 120),
+    vx: fromTop ? rand(-10, 10) : -rand(40, 60),
+    vy: fromTop ? rand(30, 50) : 0,
+    r: bonus ? 18 : 13,
+    hoverY: over && over.y !== undefined ? over.y : rand(H * 0.25, groundY - 140),
+    hoverX: rand(80, W - 80),
+    bonus, fromTop, life: 0, wob: rand(0, TAU)
+  };
+  if (over) Object.assign(o, over);
+  orbs.push(o);
+  showHint(bonus ? '保底升级球！吃到后连升 2 级！' : '升级球出现，快去拾取！', 4);
+  sfx.pickup();
+  return o;
 }
-function triggerUpgrade() {
-  upgradePending = true;
-  const pool = UPGRADES.filter(u => u.avail());
-  let choices;
-  if (pool.length <= 2) choices = pool.slice(0, 2);
-  else {
-    const a = pick(pool);
-    const b = pick(pool.filter(u => u !== a));
-    choices = [a, b];
+function updateOrbs(dt) {
+  if (state === 'playing' && orbsSpawned < orbMax && !bossDefeated) {
+    orbTimer -= dt;
+    if (orbTimer <= 0) { orbTimer = rand(40, 55); spawnOrb(); }
   }
-  upgradeChoices = choices;
-  const html = choices.map((u, i) =>
-    '<button class="upgrade-opt" onclick="window.__pickUp(' + i + ')">' +
-    '<div class="u-name">' + u.name + '</div>' +
-    '<div class="u-desc">' + u.desc + '</div></button>'
-  ).join('');
-  upgradeOptionsEl.innerHTML = html;
-  upgradeOverlay.classList.remove('hidden');
-  state = 'upgrade';
-  sfx.upgrade();
+  const p = player;
+  for (const o of [...orbs]) {
+    o.life += dt; o.wob += dt * 3;
+    if (o.fromTop) {
+      if (o.y < o.hoverY) {
+        o.y += o.vy * dt;
+        o.x += o.vx * dt;
+        o.vy = Math.min(55, o.vy + 4 * dt);
+      } else {
+        o.y = o.hoverY + Math.sin(o.wob * 2) * 5;
+        o.x += o.vx * 0.1 * dt;
+      }
+    } else {
+      o.x += o.vx * dt;
+      o.vx *= Math.max(0, 1 - 1.5 * dt);
+      if (Math.abs(o.vx) < 6) o.y = o.hoverY + Math.sin(o.wob * 2) * 5;
+    }
+    if (p && !p.dead && dist(p, o) < o.r + p.r + 12) { collectOrb(o); continue; }
+    const off = o.y > H + 40 || o.x < -40 || o.x > W + 40;
+    if (off || o.life > 25) {
+      const i = orbs.indexOf(o);
+      if (i >= 0) orbs.splice(i, 1);
+      pityActive = true;
+      addPopup(clamp(o.x, 80, W - 80), clamp(o.y, H * 0.3, H - 60), '错过升级球 — 下次保底！', '#ffd9a0');
+      sfx.death();
+    }
+  }
 }
-function pickUpgrade(i) {
-  if (state !== 'upgrade') return;
-  const u = upgradeChoices[i];
-  if (!u) return;
-  u.apply();
-  upgradesUsed++;
-  upgradePending = false;
-  upgradeOverlay.classList.add('hidden');
-  state = 'playing';
-  addPopup(player.x, player.y - 34, u.name, '#38ffb0');
-  sfx.upgrade();
+function collectOrb(o) {
+  const i = orbs.indexOf(o);
+  if (i >= 0) orbs.splice(i, 1);
+  const p = player;
+  if (!p || p.dead) return;
+  const applyOne = () => {
+    const pool = UPGRADES.filter(u => u.avail());
+    if (!pool.length) return null;
+    const u = pick(pool);
+    u.apply();
+    upgradesUsed++;
+    addPopup(p.x, p.y - 40, (o.bonus ? '保底·' : '') + u.name, '#38ffb0');
+    return u;
+  };
+  const first = applyOne();
+  if (o.bonus) applyOne();
+  if (first) {
+    addPopup(p.x, p.y - 22, o.bonus ? '保底升级！' : '升级完成！', o.bonus ? '#ffd9a0' : '#c9fbff');
+    sfx.upgrade();
+  }
 }
-window.__pickUp = pickUpgrade;
 
 /* ---------------- Level progression ---------------- */
 function updateLevel(dt) {
   if (elapsed >= 24 && phase < 2) {
     phase = 2;
-    showHint('A BLACK MONSTER SLEEPS IN. FARM IT (HIGHER STAGE = MORE SCORE) OR BLAST IT', 5);
-    maybeUpgrade(true);
+    showHint('黑怪入场！可刷高阶段赚分（阶段越高得分越高），或用炸弹炸掉', 5);
   }
   if (elapsed >= 55 && phase < 3) {
     phase = 3;
-    showHint('FREEZE TURRET ONLINE — ITS BULLETS FREEZE EVERYTHING (DAMAGE ×2 WHILE FROZEN)', 5);
-    maybeUpgrade(true);
+    showHint('冰冻炮台启动 — 它的子弹会冰冻一切（冰冻期间伤害 ×2）', 5);
     if (!turretSpawned) { turretSpawned = true; spawnTurret(); }
   }
   if (elapsed >= 95 && phase < 4) {
     phase = 4;
-    showHint('RED KING ENTERS! BOMB ITS MIDDLE SEGMENTS TO SPLIT IT — ITS SPIKES TRIGGER BOMBS', 6);
-    maybeUpgrade(true);
+    showHint('红蛇王登场！炸它中段可分裂 — 它留下的尖刺会引爆炸弹', 6);
     if (!bossSpawned) { bossSpawned = true; spawnBoss(); }
   }
   if (phase >= 2 && !blackSpawned) { blackSpawned = true; blacks.push(spawnBlack(1)); }
-  const target = bossDefeated ? 0 : ((phase >= 2 && phase < 4) ? 3 : 2);
-  if (hammers.length < target) {
+  if (!bossDefeated && hammers.length < 2) {
     hammerTimer -= dt;
-    if (hammerTimer <= 0) { hammerTimer = 7; spawnHammerAt(rand(W * 0.2, W * 0.8)); }
+    if (hammerTimer <= 0) { hammerTimer = rand(5, 8); spawnHammerElite(); }
   }
 }
 
@@ -924,6 +986,7 @@ function updateGame(dt) {
   updateBlacks(dt);
   updateSnakes(dt);
   updateSpikes(dt);
+  updateOrbs(dt);
   updatePlayer(dt);
   updateParticles(dt);
   updateStars(dt);
@@ -950,8 +1013,22 @@ function updatePlayer(dt) {
       const sp = p.baseSpeed * p.speedMul;
       p.x += dx * sp * dt;
       p.y += dy * sp * dt;
+      p.vy = dy * sp;
       clampPlayer();
+    } else {
+      p.vy *= Math.max(0, 1 - 8 * dt);
     }
+  }
+  // engine trail (jet exhaust toward the left)
+  p.engT -= dt;
+  if (p.engT <= 0) {
+    p.engT = 0.04;
+    particles.push({
+      x: p.x - 14, y: p.y + rand(-2, 2),
+      vx: -rand(60, 150), vy: rand(-14, 14),
+      life: rand(0.25, 0.5), maxLife: 0.5, size: rand(1.5, 3),
+      color: pick(['#00f6ff', '#38ffb0', '#ff9e2c', '#ffffff']), grav: 0
+    });
   }
 }
 function updateStars(dt) {
@@ -981,6 +1058,7 @@ function render() {
   if (shake > 0.3) ctx.translate(rand(-shake, shake) * 0.5, rand(-shake, shake) * 0.5);
   renderSpikes();
   renderBombs();
+  renderOrbs();
   renderHammers();
   renderTurret();
   renderBullets();
@@ -998,6 +1076,39 @@ function render() {
   if (freezeFlash > 0) {
     ctx.fillStyle = 'rgba(127,233,255,' + (0.22 * freezeFlash).toFixed(3) + ')';
     ctx.fillRect(0, 0, W, H);
+  }
+}
+function renderOrbs() {
+  for (const o of orbs) {
+    const pulse = 1 + Math.sin(o.wob * 2) * 0.18;
+    const col = o.bonus ? '#ffd9a0' : (Math.floor(o.wob) % 2 ? '#00f6ff' : '#38ffb0');
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, (o.r + 9) * pulse, 0, TAU);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = o.bonus ? 26 : 14;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, o.r * pulse, 0, TAU);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.beginPath();
+    ctx.arc(o.x - o.r * 0.3, o.y - o.r * 0.3, o.r * 0.25, 0, TAU);
+    ctx.fill();
+    if (o.bonus) {
+      ctx.font = 'bold 10px ' + GAME_FONT;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffd9a0';
+      ctx.shadowColor = '#ff9e2c';
+      ctx.shadowBlur = 8;
+      ctx.fillText('保底', o.x, o.y + o.r + 11);
+      ctx.shadowBlur = 0;
+    }
   }
 }
 function renderStars() {
@@ -1049,7 +1160,7 @@ function renderBombs() {
     ctx.arc(x, y, b.r * 0.5 * pulse, 0, TAU);
     ctx.fill();
     ctx.fillStyle = '#ffd9a0';
-    ctx.font = 'bold 10px monospace';
+    ctx.font = 'bold 10px ' + GAME_FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('!', x, y + 1);
@@ -1057,50 +1168,87 @@ function renderBombs() {
 }
 function renderHammers() {
   for (const h of hammers) {
-    const hp = hammerHeadPos(h);
+    const hp = hammerPos(h);
+    const frozen = h.frozen > 0;
+    const col = frozen ? '#7fe9ff' : (h.cracked ? '#ff5c9d' : '#ff2d78');
+    // telegraph: pulsing target marker + soft column highlight
     if (h.state === 'telegraph') {
       const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 90);
+      ctx.fillStyle = 'rgba(255,92,157,' + (0.05 * pulse).toFixed(3) + ')';
+      ctx.fillRect(h.x - h.hw, 0, h.hw * 2, groundY);
       ctx.strokeStyle = 'rgba(255,92,157,' + pulse.toFixed(2) + ')';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
       ctx.beginPath();
-      ctx.arc(h.tx, h.ty, 42, 0, TAU);
+      ctx.rect(h.x - h.hw, h.targetY - h.hh, h.hw * 2, h.hh * 2);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255,92,157,' + (0.12 * pulse).toFixed(2) + ')';
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255,92,157,' + (0.1 * pulse).toFixed(2) + ')';
       ctx.beginPath();
-      ctx.arc(h.tx, h.ty, 42, 0, TAU);
+      ctx.rect(h.x - h.hw, h.targetY - h.hh, h.hw * 2, h.hh * 2);
       ctx.fill();
     }
-    if (h.state === 'strike') {
-      ctx.fillStyle = 'rgba(255,92,157,0.3)';
-      ctx.beginPath();
-      ctx.arc(h.tx, h.ty, 42, 0, TAU);
-      ctx.fill();
-    }
-    const frozen = h.frozen > 0;
-    const col = frozen ? '#7fe9ff' : '#ff5c9d';
+    // handle: from head top up off-screen
     ctx.strokeStyle = col;
-    ctx.lineWidth = 7;
+    ctx.lineWidth = 9;
     ctx.lineCap = 'round';
     ctx.shadowColor = col;
     ctx.shadowBlur = 8;
     ctx.beginPath();
-    ctx.moveTo(h.x, h.y + 10);
-    ctx.lineTo(hp.x, hp.y);
+    ctx.moveTo(h.x, hp.y - h.hh);
+    ctx.lineTo(h.x, -40);
     ctx.stroke();
+    // hammer head: glowing rectangle
     ctx.fillStyle = frozen ? '#bfefff' : '#ff2d78';
-    ctx.shadowBlur = 14;
-    ctx.beginPath();
-    ctx.arc(hp.x, hp.y, h.headR, 0, TAU);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.beginPath();
-    ctx.arc(hp.x - h.headR * 0.3, hp.y - h.headR * 0.3, h.headR * 0.45, 0, TAU);
-    ctx.fill();
+    ctx.shadowBlur = 18;
+    ctx.fillRect(hp.x - h.hw, hp.y - h.hh, h.hw * 2, h.hh * 2);
     ctx.shadowBlur = 0;
-    ctx.fillStyle = col;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hp.x - h.hw, hp.y - h.hh, h.hw * 2, h.hh * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    ctx.fillRect(hp.x - h.hw + 4, hp.y - h.hh + 4, h.hw * 2 - 8, 8);
+    if (h.cracked) {
+      ctx.strokeStyle = '#ffd9a0';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(hp.x - 8, hp.y - h.hh + 6);
+      ctx.lineTo(hp.x + 2, hp.y + 2);
+      ctx.lineTo(hp.x - 4, hp.y + h.hh - 6);
+      ctx.moveTo(hp.x + 6, hp.y - h.hh + 10);
+      ctx.lineTo(hp.x + 12, hp.y - 4);
+      ctx.stroke();
+    }
+    // elite HP bar (2 segments) — shown above the head, or at the target during telegraph
+    const bw = h.hw * 2, bx = hp.x - bw / 2;
+    const by = h.state === 'telegraph' ? h.targetY - h.hh - 16 : hp.y - h.hh - 16;
+    ctx.fillStyle = 'rgba(4,5,12,0.7)';
+    ctx.fillRect(bx - 1, by - 1, bw + 2, 8);
+    ctx.fillStyle = 'rgba(255,92,157,0.25)';
+    ctx.fillRect(bx, by, bw, 6);
+    ctx.fillStyle = frozen ? '#7fe9ff' : '#ff2d78';
+    ctx.fillRect(bx, by, bw * (h.hp / h.maxHp), 6);
+    ctx.strokeStyle = 'rgba(255,92,157,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, bw, 6);
+    ctx.strokeStyle = 'rgba(255,92,157,0.35)';
     ctx.beginPath();
-    ctx.arc(h.x, h.y + 10, 8, 0, TAU);
-    ctx.fill();
+    ctx.moveTo(bx + bw / 2, by);
+    ctx.lineTo(bx + bw / 2, by + 6);
+    ctx.stroke();
+    ctx.font = 'bold 9px ' + GAME_FONT;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = col;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 6;
+    ctx.fillText('精英锤兵', hp.x, by - 2);
+    ctx.shadowBlur = 0;
+    // frozen: cyan frost overlay
+    if (frozen) {
+      ctx.fillStyle = 'rgba(127,233,255,0.3)';
+      ctx.fillRect(hp.x - h.hw, hp.y - h.hh, h.hw * 2, h.hh * 2);
+    }
   }
 }
 function renderTurret() {
@@ -1198,7 +1346,7 @@ function renderBlacks() {
       ctx.arc(6, -3, 4, Math.PI * 1.15, Math.PI * 1.85);
       ctx.stroke();
       if (bk.sleeping) {
-        ctx.font = 'bold 10px monospace';
+        ctx.font = 'bold 10px ' + GAME_FONT;
         ctx.fillStyle = '#b967ff';
         ctx.globalAlpha = 0.7;
         ctx.fillText('z', 12 + Math.sin(bk.zz * 2) * 2, -14);
@@ -1249,13 +1397,13 @@ function renderBlacks() {
     }
     ctx.restore();
     ctx.globalAlpha = 0.85;
-    ctx.font = 'bold 9px monospace';
+    ctx.font = 'bold 9px ' + GAME_FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = col;
     ctx.shadowColor = col;
     ctx.shadowBlur = 6;
-    ctx.fillText('S' + bk.stage, bk.x, bk.y - 18 - bk.r);
+    ctx.fillText('阶' + bk.stage, bk.x, bk.y - 18 - bk.r);
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   }
@@ -1324,6 +1472,8 @@ function renderPlayer() {
   const blink = p.invuln > 0 && Math.floor(performance.now() / 90) % 2 === 0;
   ctx.save();
   ctx.translate(p.x, p.y);
+  // pitch: nose up when climbing, nose down when diving (clamped ±15°)
+  ctx.rotate(clamp(p.vy * 0.001, -0.262, 0.262));
   if (p.frozen > 0) {
     ctx.fillStyle = 'rgba(127,233,255,0.2)';
     ctx.beginPath();
@@ -1331,6 +1481,27 @@ function renderPlayer() {
     ctx.fill();
   }
   ctx.globalAlpha = blink ? 0.35 : 1;
+  // engine flame (trails behind, pointing left)
+  const flame = 1 + Math.sin(performance.now() / 26) * 0.35;
+  ctx.fillStyle = '#ff9e2c';
+  ctx.shadowColor = '#ff9e2c';
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.moveTo(-10, -3);
+  ctx.lineTo(-10 - 16 * flame, 0);
+  ctx.lineTo(-10, 3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#7fe9ff';
+  ctx.shadowColor = '#00f6ff';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.moveTo(-10, -1.6);
+  ctx.lineTo(-10 - 9 * flame, 0);
+  ctx.lineTo(-10, 1.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.fillStyle = 'rgba(0,246,255,0.25)';
   ctx.beginPath();
   ctx.arc(-4, 0, 12 + Math.sin(performance.now() / 80) * 2, 0, TAU);
@@ -1387,7 +1558,7 @@ function renderPopups() {
   for (const p of popups) {
     const a = Math.max(0, p.life / p.maxLife);
     ctx.globalAlpha = a;
-    ctx.font = 'bold 12px monospace';
+    ctx.font = 'bold 12px ' + GAME_FONT;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = p.color;
@@ -1454,43 +1625,43 @@ function renderHUD() {
     drawHeartAt(22 + i * 21, 28, st);
   }
   if (player) {
-    ctx.font = 'bold 13px monospace';
+    ctx.font = 'bold 13px ' + GAME_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#d9fdff';
     ctx.shadowColor = '#00f6ff';
     ctx.shadowBlur = 8;
-    ctx.fillText('SCORE ' + String(Math.floor(score)).padStart(6, '0'), 18, 46);
+    ctx.fillText('得分 ' + String(Math.floor(score)).padStart(6, '0'), 18, 46);
     ctx.shadowBlur = 0;
-    ctx.font = '11px monospace';
+    ctx.font = '11px ' + GAME_FONT;
     ctx.fillStyle = 'rgba(201,251,255,0.7)';
     const mm = Math.floor(elapsed / 60), ss = Math.floor(elapsed % 60);
-    ctx.fillText('TIME ' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 18, 64);
-    ctx.fillText('PHASE ' + phase + '/4   KILLS ' + kills, 18, 80);
-    // energy / xp
-    ctx.fillText('ENERGY', 18, 98);
+    ctx.fillText('时间 ' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 18, 64);
+    ctx.fillText('阶段 ' + phase + '/4   击杀 ' + kills, 18, 80);
+    // energy (from kills; upgrades come from power orbs)
+    ctx.fillText('能量', 18, 98);
     ctx.fillStyle = 'rgba(201,251,255,0.15)';
     ctx.fillRect(18, 110, 90, 6);
-    const frac = upgradesUsed >= 3 ? 1 : Math.min(1, kills / killThresholds[upgradesUsed]);
+    const frac = Math.min(1, energy / 100);
     ctx.fillStyle = '#38ffb0';
     ctx.shadowColor = '#38ffb0';
     ctx.shadowBlur = 6;
     ctx.fillRect(18, 110, 90 * frac, 6);
     ctx.shadowBlur = 0;
-    if (upgradesUsed >= 3) {
+    if (energy >= 100) {
       ctx.fillStyle = 'rgba(56,255,176,0.8)';
-      ctx.font = '9px monospace';
-      ctx.fillText('MAX', 112, 108);
+      ctx.font = '9px ' + GAME_FONT;
+      ctx.fillText('满', 112, 108);
     }
     // boss HP bar
     if (bossSpawned && !bossDefeated) {
       const bw = Math.min(420, W * 0.42), bx = (W - bw) / 2;
-      ctx.font = 'bold 10px monospace';
+      ctx.font = 'bold 10px ' + GAME_FONT;
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ff2d78';
       ctx.shadowColor = '#ff2d78';
       ctx.shadowBlur = 8;
-      ctx.fillText('RED KING', W / 2, 14);
+      ctx.fillText('红蛇王', W / 2, 14);
       ctx.shadowBlur = 0;
       ctx.fillStyle = 'rgba(255,45,120,0.15)';
       ctx.fillRect(bx, 26, bw, 10);
@@ -1505,17 +1676,17 @@ function renderHUD() {
     }
     if (player.carrying) {
       ctx.textAlign = 'center';
-      ctx.font = 'bold 11px monospace';
+      ctx.font = 'bold 11px ' + GAME_FONT;
       ctx.fillStyle = '#ff9e2c';
       ctx.shadowColor = '#ff9e2c';
       ctx.shadowBlur = 8;
-      ctx.fillText("CARRYING BOMB — DROP (E) BEFORE IT'S HIT!", W / 2, H - 58);
+      ctx.fillText('已拾取炸弹 — 趁它被击中前放下（E / 放下炸弹）！', W / 2, H - 58);
       ctx.shadowBlur = 0;
     }
     if (hintTimer > 0 && hintText) {
       ctx.globalAlpha = Math.min(1, hintTimer);
       ctx.textAlign = 'center';
-      ctx.font = 'bold 12px monospace';
+      ctx.font = 'bold 12px ' + GAME_FONT;
       ctx.fillStyle = '#c9fbff';
       ctx.shadowColor = '#00f6ff';
       ctx.shadowBlur = 8;
@@ -1524,11 +1695,11 @@ function renderHUD() {
       ctx.globalAlpha = 1;
     }
   }
-  ctx.font = '10px monospace';
+  ctx.font = '10px ' + GAME_FONT;
   ctx.textAlign = 'right';
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(255,45,120,0.8)';
-  ctx.fillText('BEST ' + String(Math.floor(best)).padStart(6, '0'), W - 12, 8);
+  ctx.fillText('最佳 ' + String(Math.floor(best)).padStart(6, '0'), W - 12, 8);
 }
 
 /* ---------------- Flow ---------------- */
@@ -1540,18 +1711,18 @@ function resetGame() {
   bombRadiusUp = 0; bombTimer = 1.5; hammerTimer = 3;
   stats = { hammers: 0, blacks: 0, turrets: 0, boss: 0 };
   hintText = ''; hintTimer = 0;
-  upgradeChoices = []; upgradePending = false;
+  orbs = []; orbTimer = rand(40, 55); orbsSpawned = 0; pityActive = false; energy = 0;
   blackSpawned = false; turretSpawned = false;
   player = makePlayer();
-  spawnHammerSpread(2);
-  showHint('PICK UP ORANGE BOMBS. DROP THEM (E / DROP BTN) UNDER A HAMMER STRIKE — THEN RUN', 6);
+  spawnHammerPair();
+  showHint('拾取橙色炸弹，放在锤兵砸击路径上，然后跑开！', 6);
 }
 function startGame() {
-  if (state === 'playing' || state === 'upgrade') return;
+  if (state === 'playing') return;
   initAudio();
   resetGame();
   state = 'playing';
-  for (const o of [menuOverlay, pauseOverlay, upgradeOverlay, overOverlay, victoryOverlay]) o.classList.add('hidden');
+  for (const o of [menuOverlay, pauseOverlay, overOverlay, victoryOverlay]) o.classList.add('hidden');
   sfx.click();
 }
 function togglePause() {
@@ -1592,11 +1763,11 @@ function victoryScreen() {
   vicScoreTime.textContent = final.toLocaleString() + ' · ' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0');
   vicBest.textContent = best.toLocaleString();
   victoryStats.innerHTML =
-    '<div>HAMMERS DESTROYED <b>' + stats.hammers + '</b></div>' +
-    '<div>BLACK MONSTERS <b>' + stats.blacks + '</b></div>' +
-    '<div>TURRETS <b>' + stats.turrets + '</b></div>' +
-    '<div>BOSS SEGMENTS <b>' + stats.boss + '</b></div>' +
-    '<div>UPGRADES USED <b>' + upgradesUsed + '/3</b></div>';
+    '<div>精英锤兵摧毁 <b>' + stats.hammers + '</b></div>' +
+    '<div>黑怪击杀 <b>' + stats.blacks + '</b></div>' +
+    '<div>炮台摧毁 <b>' + stats.turrets + '</b></div>' +
+    '<div>蛇王节段 <b>' + stats.boss + '</b></div>' +
+    '<div>升级次数 <b>' + upgradesUsed + '</b></div>';
   victoryOverlay.classList.remove('hidden');
   sfx.victory();
 }
@@ -1604,7 +1775,7 @@ function checkVictory() {
   if (state !== 'playing' || !bossSpawned) return;
   if (snakes.length === 0 && !bossDefeated) {
     bossDefeated = true;
-    showHint('RED KING DESTROYED! CLEAR HAMMERS + TURRET TO WIN', 5);
+    showHint('红蛇王已被摧毁！清除锤兵与炮台即可通关', 5);
     sfx.split();
   }
   if (bossDefeated && hammers.length === 0 && turrets.length === 0) victoryScreen();
@@ -1646,18 +1817,19 @@ window.__DODGE = {
   drop: () => dropBomb(),
   stepPlayer: (dx, dy) => { if (player && state === 'playing' && player.frozen <= 0) { player.x += dx; player.y += dy; clampPlayer(); } },
   spawnBombNear: (x, y) => { bombs.push({ x, y, px: x, py: y, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: 0 }); },
-  spawnHammerAt: (x, y) => { const h = spawnHammerAt(x); if (y) { h.targetY = y; computeHammerTarget(h); } return h; },
+  spawnHammerAt: (col) => spawnHammerAt(col == null ? 0 : col),
   explodeAt: (x, y) => {
     const b = { x, y, px: x, py: y, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: 0 };
     bombs.push(b);
     explodeBomb(b);
   },
-  forceHammerStrike: (h) => { if (h) { h.state = 'strike'; h.timer = 0.09; h.impacted = false; } },
+  forceHammerStrike: (h) => { if (h) { h.state = 'strike'; h.timer = 0.02; h.impacted = false; } },
   spawnBlackNear: (x, y) => { const bk = spawnBlack(1); bk.x = x; bk.y = y; bk.sleeping = false; blacks.push(bk); },
   clearEnemies: () => { hammers = []; turrets = []; snakes = []; bullets = []; spikes = []; },
   forceVictoryReady: () => { hammers = []; turrets = []; snakes = []; bossSpawned = true; bossDefeated = true; },
-  forceUpgrade: () => maybeUpgrade(true),
-  pickUpgrade: (i) => pickUpgrade(i),
+  forceOrb: (x, y, bonus) => spawnOrb({ x, y, vx: 0, vy: 0, fromTop: false, bonus: !!bonus }),
+  forceUpgrade: () => { if (player) spawnOrb({ x: player.x + 24, y: player.y, vx: 0, vy: 0, fromTop: false, bonus: false }); },
+  forcePity: () => { pityActive = true; },
   testFreeze: () => freezePlayer(3),
   spawnBossTest: () => { if (!bossSpawned) { bossSpawned = true; spawnBoss(); } },
   midSegment: () => { const s = snakes[0]; return s ? s.segments[Math.floor(s.segments.length / 2)] : null; },
@@ -1668,10 +1840,11 @@ window.__DODGE = {
     carrying: !!(player && player.carrying),
     hammers: hammers.length, turrets: turrets.length, snakes: snakes.length, bombs: bombs.length,
     bossDefeated, bossSpawned, frozen: player ? player.frozen : 0,
+    orbs: orbs.length, energy: Math.floor(energy), pityActive,
+    hammerCols: hammers.map(h => h.col),
     px: player ? player.x : 0, py: player ? player.y : 0
   })
 };
 </script>
 </body>
 </html>
-
