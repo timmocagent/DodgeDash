@@ -1001,6 +1001,16 @@ function updateMobs(dt) {
       } else if (m.state === 'charge') {
         m.x += m.vx * dt; m.y += m.vy * dt;
         m.chargeT -= dt;
+        // charge = attack: plowing into a bomb detonates it (charger takes the blast too)
+        for (const b of [...bombs]) {
+          if (!b.carried && !b.exploded && dist(m, { x: b.x, y: b.y }) < m.r + b.r + 4) {
+            explodeBomb(b);
+            const ka = Math.atan2(m.y - b.y, m.x - b.x);
+            m.vx += Math.cos(ka) * 220;
+            m.vy += Math.sin(ka) * 220;
+            break;
+          }
+        }
         if (m.chargeT <= 0 || m.x < 16 || m.x > W - 16 || m.y < H * 0.1 || m.y > groundY - m.r) {
           m.state = 'rest'; m.restT = rand(1.0, 1.8);
         }
@@ -1094,6 +1104,10 @@ function explodeEnemyShot(e) {
       m.hp -= 1;
       if (m.hp <= 0) killMob(m);
     }
+  }
+  // enemy bomb blast = attack: detonates player-laid bombs caught in the radius
+  for (const b of [...bombs]) {
+    if (!b.carried && !b.exploded && dist({ x: b.x, y: b.y }, e) < rad + b.r) explodeBomb(b);
   }
   removeEshot(e);
 }
@@ -1198,7 +1212,15 @@ function updateSnakes(dt) {
     // stage 2: leave spikes along the path
     if (s.stage2) {
       s.spikeTimer -= dt;
-      if (s.spikeTimer <= 0) { s.spikeTimer = 0.35; spikes.push({ x: head.x, y: groundY, t: 6 }); }
+      if (s.spikeTimer <= 0) {
+        s.spikeTimer = 0.35;
+        const sxp = head.x, syp = groundY;
+        // spike eruption = crush moment: detonate bombs once at spawn, then it's a static hazard
+        for (const b of [...bombs]) {
+          if (!b.carried && !b.exploded && dist({ x: b.x, y: b.y }, { x: sxp, y: syp }) < 26) explodeBomb(b);
+        }
+        spikes.push({ x: sxp, y: syp, t: 6 });
+      }
     }
   }
   const tot = totalBossHp();
@@ -1228,6 +1250,12 @@ function bossVsMinions(s) {
   let needProcess = false;
   for (const seg of s.segments) {
     if (seg.hp <= 0) continue;
+    // crush = attack: a moving segment plowing into a bomb detonates it (frozen = not attacking)
+    if (seg.frozen <= 0) {
+      for (const b of [...bombs]) {
+        if (!b.carried && !b.exploded && dist(seg, b) < seg.r + b.r + 4) explodeBomb(b);
+      }
+    }
     for (const bk of [...blacks]) {
       if (dist(seg, bk) < seg.r + bk.r) {
         crushBlack(bk);
@@ -1533,9 +1561,6 @@ function updateSpikes(dt) {
   for (const s of [...spikes]) {
     s.t -= dt;
     if (s.t <= 0) { spikes.splice(spikes.indexOf(s), 1); continue; }
-    for (const b of [...bombs]) {
-      if (!b.carried && !b.exploded && dist({ x: b.x, y: b.y }, { x: s.x, y: s.y }) < 26) explodeBomb(b);
-    }
     if (!p.dead && Math.abs(p.x - s.x) < 15 && Math.abs(p.y - groundY) < 26) damagePlayer(2, s.x, groundY);
   }
 }
