@@ -163,6 +163,7 @@ const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const easeOut = t => 1 - (1 - t) * (1 - t);
+const easeIn = t => t * t;
 
 let W = 0, H = 0, dpr = 1, groundY = 0, bgCanvas = null, stars = [];
 
@@ -230,12 +231,12 @@ let hammers = [], blacks = [], snakes = [], turrets = [], bullets = [], spikes =
 let mobs = [], eshots = [];
 let grubs = [], grubTimer = 0;
 let particles = [], shockwaves = [], popups = [];
-let bombTimer = 1.5, hammerTimer = 3;
-let waveType = 'hammer', waveTimer = 0, normalSpawnT = 2;
+let bombTimer = 1.5;
+let hammerSpawns = 0, hammerEventTimer = 0, hammerEventActive = false, spawnPauseUntil = 0, normalSpawnT = 2;
 let pickups = [], pickupTimer = rand(8, 14);
 const PICKUP_TYPES = ['heal', 'shield', 'speed', 'bomb'];
 let stats = { hammers: 0, blacks: 0, turrets: 0, boss: 0, mobs: 0 };
-let hintText = '', hintTimer = 0;
+let hintText = '', hintTimer = 0, godMode = false;
 let orbs = [], orbTimer = rand(40, 55), orbsSpawned = 0, orbMax = 3, pityActive = false;
 let energy = 0;
 let blackSpawned = false, turretSpawned = false;
@@ -379,7 +380,7 @@ function clampPlayer() {
 }
 function damagePlayer(amount, sx, sy) {
   const p = player;
-  if (state !== 'playing' || p.dead || p.invuln > 0) return;
+  if (state !== 'playing' || p.dead || p.invuln > 0 || godMode) return;
   if (p.shieldUp) {
     // permanent shield: absorbs one hit, then shatters
     p.shieldUp = false;
@@ -545,6 +546,11 @@ const HAMMER_PAUSE_DUR_MIN = 0.25;    // telegraph pause: "about to lift, escape
 const HAMMER_PAUSE_DUR_MAX = 0.4;
 const HAMMER_RAISE_DUR = 0.3;         // fast lift back to the top
 const HAMMER_LIFT_FRAC = 0.18;        // slow-rise distance as fraction of hammer head height
+const HAMMER_RETREAT_DUR = 0.5;       // elite recovery: keep rising off the top before removal
+const HAMMER_RETREAT_DIST = 260;      // extra upward distance travelled off-screen during recovery
+const HAMMER_EVENT_T1 = 30;           // first elite hammer event (~1/3 of the ~90s level)
+const HAMMER_EVENT_T2 = 60;           // second elite hammer event (~2/3 of the level)
+const RETREAT_SPEED_Y = 420;          // minion retreat vertical speed (px/s)
 function hammerColLayout() {
   const colW = Math.min(W / ELITE_COLS, W * HAMMER_MAX_COL_W_FRAC);
   const margin = (W - colW * ELITE_COLS) / 2;
@@ -591,9 +597,15 @@ function pickHammerColumns(count) {
   return picked;
 }
 function spawnHammerPair() {
-  for (const c of pickHammerColumns(2)) spawnHammerAt(c);
+  const spawned = [];
+  for (const c of pickHammerColumns(2)) {
+    const h = spawnHammerAt(c);
+    if (h) spawned.push(h);
+  }
+  return spawned;
 }
 function spawnHammerAt(col) {
+  if (hammerSpawns >= 2 || phase >= 4 || bossDefeated) return null;
   const g = hammerColLayout();
   const c = clamp(Math.round(col), 0, ELITE_COLS - 1);
   const h = {
@@ -608,10 +620,10 @@ function spawnHammerAt(col) {
     dmg: 0, hitPlayer: false, pushingPlayer: false, pushDone: false, crushed: []
   };
   hammers.push(h);
-  showHint('精英锤兵 来袭！', 3.5);
   return h;
 }
 function spawnHammerElite() {
+  if (hammerSpawns >= 2 || phase >= 4 || bossDefeated) return null;
   const free = [];
   for (let c = 0; c < ELITE_COLS; c++) {
     const rc = hammerRect(c);
@@ -643,11 +655,15 @@ function hammerPos(h) {
     const start = h.targetY - hammerLiftAmount(h);
     return { x: h.x, y: start - (start - HAMMER_TOP) * (1 - Math.pow(1 - p, 3)) };
   }
+  if (h.state === 'retreat') {
+    const p = clamp(1 - h.timer / HAMMER_RETREAT_DUR, 0, 1);
+    return { x: h.x, y: HAMMER_TOP - HAMMER_RETREAT_DIST * easeIn(p) };
+  }
   return { x: h.x, y: HAMMER_TOP };
 }
 function hammerHitPlayer(h, amount) {
   const p = player;
-  if (state !== 'playing' || !p || p.dead) return;
+  if (state !== 'playing' || !p || p.dead || godMode) return;
   if (p.shieldUp) {
     // permanent shield absorbs the first hammer hit too
     p.shieldUp = false;
@@ -767,7 +783,22 @@ function updateHammers(dt) {
     } else if (h.state === 'risePause') {
       if (h.timer <= 0) { h.state = 'fastLift'; h.timer = HAMMER_RAISE_DUR; }
     } else if (h.state === 'fastLift') {
-      if (h.timer <= 0) { h.state = 'telegraph'; h.timer = rand(1.0, 1.6); }
+      if (h.timer <= 0) { h.state = 'retreat'; h.timer = HAMMER_RETREAT_DUR; }
+    } else if (h.state === 'retreat') {
+      // elite recovery: hammer keeps rising off the top, no damage while retreating
+      const hp = hammerPos(h);
+      if (Math.random() < 0.8) {
+        particles.push({
+          x: h.x + rand(-h.hw * 0.7, h.hw * 0.7), y: hp.y + rand(-4, 14),
+          vx: rand(-18, 18), vy: -rand(110, 230),
+          life: rand(0.3, 0.6), maxLife: 0.6, size: rand(2, 4),
+          color: pick(['#ff2d78', '#ffd9a0', '#c9fbff']), grav: 0
+        });
+      }
+      if (h.timer <= 0) {
+        const i = hammers.indexOf(h);
+        if (i >= 0) hammers.splice(i, 1);
+      }
     }
   }
 }
@@ -829,7 +860,8 @@ function spawnBlack(stage) {
     stage, x: rand(40, W - 40), y: -40,
     r: stage === 1 ? 18 : (stage === 2 ? 22 : 24),
     hp: 3 * stage, maxHp: 3 * stage, sleeping: stage === 1, wakeAt: rand(5, 9),
-    timer: rand(0, TAU), ang: stage === 2 ? Math.PI / 2 : 0, frozen: 0, respawnIn: 0, zz: rand(0, TAU)
+    timer: rand(0, TAU), ang: stage === 2 ? Math.PI / 2 : 0, frozen: 0, respawnIn: 0, zz: rand(0, TAU),
+    retreating: false, rvx: 0, rvy: 0
   };
 }
 function wakeBlack(bk) {
@@ -841,6 +873,16 @@ function wakeBlack(bk) {
 function updateBlacks(dt) {
   const p = player;
   for (const bk of [...blacks]) {
+    if (bk.retreating) {
+      bk.x += bk.rvx * dt;
+      bk.y += bk.rvy * dt;
+      addRetreatTrail(bk.x, bk.y, '#b967ff');
+      if (bk.y < -90 || bk.x < -90 || bk.x > W + 90) {
+        const i = blacks.indexOf(bk);
+        if (i >= 0) blacks.splice(i, 1);
+      }
+      continue;
+    }
     if (bk.respawnIn > 0) { bk.respawnIn -= dt; if (bk.respawnIn <= 0) respawnBlack(bk); continue; }
     if (bk.frozen > 0) { bk.frozen -= dt; continue; }
     if (bk.sleeping) {
@@ -870,6 +912,7 @@ function respawnBlack(bk) {
   bk.x = rand(40, W - 40); bk.y = -44;
   bk.hp = 3 * bk.stage; bk.maxHp = 3 * bk.stage;
   bk.sleeping = false; bk.frozen = 0; bk.respawnIn = 0;
+  bk.retreating = false; bk.rvx = 0; bk.rvy = 0;
   bk.timer = rand(0, TAU); bk.ang = Math.PI / 2; bk.zz = rand(0, TAU);
   if (up) addPopup(clamp(bk.x, 60, W - 60), H * 0.25, '阶段 ' + bk.stage + '！', '#b967ff');
 }
@@ -896,7 +939,8 @@ function spawnMob(type, x, y, quiet) {
     type, x: x !== undefined ? x : rand(50, W - 50), y: y !== undefined ? y : -44,
     r: d.r, hp: d.hp, maxHp: d.hp, pts: d.pts, name: d.name, col: d.col,
     frozen: 0, t: rand(0, TAU), state: 'enter',
-    small: false, baseX: 0, hoverY: H * 0.25, restT: 0, chargeT: 0, vx: 0, vy: 0, fireT: rand(1.5, 2.5), throwT: rand(1.5, 2.5)
+    small: false, baseX: 0, hoverY: H * 0.25, restT: 0, chargeT: 0, vx: 0, vy: 0, fireT: rand(1.5, 2.5), throwT: rand(1.5, 2.5),
+    retreating: false
   };
   if (type === 'floater') { m.hoverY = rand(H * 0.15, H * 0.4); m.baseX = m.x; }
   if (type === 'thrower') { m.hoverY = rand(H * 0.12, H * 0.28); }
@@ -925,6 +969,16 @@ function spawnFloaterShot(m) {
 function updateMobs(dt) {
   const p = player;
   for (const m of [...mobs]) {
+    if (m.retreating) {
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      addRetreatTrail(m.x, m.y, m.col);
+      if (m.y < -90 || m.x < -90 || m.x > W + 90) {
+        const i = mobs.indexOf(m);
+        if (i >= 0) mobs.splice(i, 1);
+      }
+      continue;
+    }
     if (m.frozen > 0) {
       m.frozen -= dt;
       if (m.type === 'dash' && m.state === 'charge') { m.state = 'rest'; m.restT = 1.2; }
@@ -998,6 +1052,11 @@ function killMob(m) {
       s.small = true; s.r = 9; s.hp = 1; s.maxHp = 1; s.pts = 50;
       s.name = '小史莱姆'; s.state = 'ground'; s.y = Math.min(m.y, groundY - 9);
       s.x = clamp(s.x, 16, W - 16);
+      if (m.retreating) {
+        s.retreating = true;
+        s.vx = (s.x < W / 2 ? -1 : 1) * rand(50, 140);
+        s.vy = -rand(RETREAT_SPEED_Y, RETREAT_SPEED_Y * 1.25);
+      }
     }
     addPopup(m.x, m.y - 26, '分裂！', '#b967ff');
     sfx.split();
@@ -1689,41 +1748,47 @@ function updateLevel(dt) {
     showHint('冰冻炮台 x3 启动！沿边缘漂移 — 子弹冰冻一切（冰冻期间伤害 ×2）', 5);
     if (!turretSpawned) { turretSpawned = true; spawnTurret(); }
   }
-  if (elapsed >= 95 && phase < 4) {
+  if (elapsed >= 90 && phase < 4) {
     phase = 4;
-    showHint('红蛇王登场！每节独立 HP，打掉尾部会变新头 — 用炸弹或引寄生蛆啃咬它！', 6);
+    // boss fight: remaining minions flee fast, and no more hammer events, ever
+    hammerEventActive = false; hammerEventTimer = 0;
+    startMinionRetreat(true);
     if (!bossSpawned) { bossSpawned = true; spawnBoss(); }
+    showHint('红蛇王登场！每节独立 HP，打掉尾部会变新头 — 用炸弹或引寄生蛆啃咬它！', 6);
   }
 }
 
-/* ---------------- Waves: hammer wave ↔ normal wave ---------------- */
-function clearNormalMonsters() {
-  for (const e of [...blacks, ...mobs]) {
-    addBurst(e.x, e.y, 10, '#b967ff', 160, 0.3);
-    addPopup(e.x, e.y - 18, '怪物群撤离', '#b967ff');
-  }
-  blacks = []; mobs = []; eshots = [];
+/* ---------------- Level flow: fixed timeline (normal waves + 2 elite hammer events) ---------------- */
+function addRetreatTrail(x, y, col) {
+  if (Math.random() < 0.45) return;
+  particles.push({
+    x: x + rand(-8, 8), y: y + rand(-8, 8),
+    vx: rand(-20, 20), vy: rand(-50, 10),
+    life: rand(0.2, 0.45), maxLife: 0.45, size: rand(1.2, 2.6),
+    color: col, grav: 0
+  });
 }
-function clearHammers() {
-  for (const h of hammers) {
-    addBurst(h.x, h.targetY, 14, '#ff2d78', 180, 0.3);
-    addPopup(h.x, h.targetY - 40, '锤兵撤离', '#ff5c9d');
+function startMinionRetreat(fast) {
+  const sp = fast ? RETREAT_SPEED_Y * 1.6 : RETREAT_SPEED_Y;
+  for (const bk of blacks) {
+    bk.retreating = true;
+    bk.respawnIn = 0;
+    bk.rvx = (bk.x < W / 2 ? -1 : 1) * rand(40, 120);
+    bk.rvy = -rand(sp, sp * 1.25);
   }
-  hammers = [];
+  for (const m of mobs) {
+    m.retreating = true;
+    m.vx = (m.x < W / 2 ? -1 : 1) * rand(50, 140);
+    m.vy = -rand(sp, sp * 1.25);
+  }
+  eshots = [];
 }
-function onWaveStart(type) {
-  if (type === 'hammer') {
-    clearNormalMonsters();
-    if (hammers.length === 0) spawnHammerPair();
-    else if (hammers.length < 2) spawnHammerElite();
-    showHint('锤兵来袭！', 3);
-    sfx.hammer();
-  } else {
-    clearHammers();
-    if (blacks.length === 0) blacks.push(spawnBlack(clamp(phase, 1, 3)));
-    showHint('怪物群 来袭！', 3);
-    sfx.freeze();
-  }
+function startHammerEvent() {
+  if (hammerEventActive || hammerSpawns >= 2 || phase >= 4 || bossDefeated) return;
+  hammerEventActive = true;
+  // vacuum lead-in: minions start retreating now; hammers arrive 4-6s later no matter what
+  hammerEventTimer = rand(4, 6);
+  startMinionRetreat(false);
 }
 function spawnNormalWaveMob() {
   const pool = phase >= 3 ? ['black', 'dash', 'slime', 'floater', 'thrower']
@@ -1736,19 +1801,30 @@ function spawnNormalWaveMob() {
     if (mobs.length < (phase >= 4 ? 6 : 4)) spawnMob(type);
   }
 }
-function updateWaves(dt) {
-  waveTimer -= dt;
-  if (waveTimer <= 0) {
-    waveType = waveType === 'hammer' ? 'normal' : 'hammer';
-    waveTimer = rand(12, 16);
-    onWaveStart(waveType);
+function updateLevelFlow(dt) {
+  // fixed timeline: elite hammer events at ~1/3 and ~2/3 of the level
+  if (!hammerEventActive && phase < 4 && !bossDefeated) {
+    if (hammerSpawns === 0 && elapsed >= HAMMER_EVENT_T1) startHammerEvent();
+    else if (hammerSpawns === 1 && elapsed >= HAMMER_EVENT_T2) startHammerEvent();
   }
-  if (waveType === 'hammer') {
-    if (!bossDefeated && hammers.length < 2) {
-      hammerTimer -= dt;
-      if (hammerTimer <= 0) { hammerTimer = rand(6, 9); spawnHammerElite(); }
+  if (hammerEventActive) {
+    if (hammerEventTimer > 0) {
+      hammerEventTimer -= dt;
+      if (hammerEventTimer <= 0) {
+        hammerEventTimer = -1; // fired once; stays fired until hammers fully retreat
+        const spawned = spawnHammerPair();
+        if (spawned.length) { hammerSpawns++; sfx.hammer(); }
+        else hammerEventActive = false; // hard cap / boss phase: nothing more to spawn
+      }
     }
-  } else {
+  }
+  // once the last hammer has fully retreated off-screen, keep a short vacuum gap
+  if (hammerEventActive && hammerEventTimer < 0 && hammers.length === 0) {
+    hammerEventActive = false;
+    spawnPauseUntil = elapsed + rand(3, 5);
+  }
+  // normal minion waves run continuously (phase-based mix) until a hammer event or the boss
+  if (phase < 4 && !hammerEventActive && hammers.length === 0 && elapsed >= spawnPauseUntil) {
     normalSpawnT -= dt;
     if (normalSpawnT <= 0) {
       normalSpawnT = rand(2.4, 4.2);
@@ -1763,7 +1839,7 @@ function updateGame(dt) {
   elapsed += dt;
   score += dt * 10; // survival time score
   updateLevel(dt);
-  updateWaves(dt);
+  updateLevelFlow(dt);
   updateBombs(dt);
   updateHammers(dt);
   updateTurret(dt);
@@ -2808,7 +2884,7 @@ function renderHUD() {
     const mm = Math.floor(elapsed / 60), ss = Math.floor(elapsed % 60);
     ctx.fillText('时间 ' + String(mm).padStart(2, '0') + ':' + String(ss).padStart(2, '0'), 18, 64);
     ctx.fillText('阶段 ' + phase + '/4   击杀 ' + kills, 18, 80);
-    ctx.fillText('波次 ' + (waveType === 'hammer' ? '锤子波' : '怪物波') + '  ' + Math.max(0, Math.ceil(waveTimer)) + 's', 18, 96);
+    ctx.fillText('精英锤兵 ' + hammerSpawns + '/2', 18, 96);
     // energy (from kills; upgrades come from power orbs)
     ctx.fillText('能量', 18, 114);
     ctx.fillStyle = 'rgba(201,251,255,0.15)';
@@ -2883,15 +2959,14 @@ function resetGame() {
   particles = []; shockwaves = []; popups = [];
   pickups = []; pickupTimer = rand(8, 14);
   phase = 1; bossSpawned = false; bossDefeated = false; bossMaxHp = 0;
-  bombRadiusUp = 0; bombTimer = 1.5; hammerTimer = 3;
-  waveType = 'hammer'; waveTimer = rand(12, 16); normalSpawnT = 2;
+  bombRadiusUp = 0; bombTimer = 1.5;
+  hammerSpawns = 0; hammerEventTimer = 0; hammerEventActive = false; spawnPauseUntil = 0; normalSpawnT = 2;
   stats = { hammers: 0, blacks: 0, turrets: 0, boss: 0, mobs: 0 };
   hintText = ''; hintTimer = 0;
   orbs = []; orbTimer = rand(40, 55); orbsSpawned = 0; pityActive = false; energy = 0;
   blackSpawned = false; turretSpawned = false;
   shieldBreak = 0; pinThumpT = 0;
   player = makePlayer();
-  spawnHammerPair();
   showHint('拾取橙色炸弹，放在锤兵砸击路径上，然后跑开！', 6);
 }
 function startGame() {
@@ -2990,17 +3065,21 @@ requestAnimationFrame(loop);
 window.__DODGE = {
   getState: () => state,
   start: () => startGame(),
+  restart: () => { state = 'menu'; startGame(); },
   step: (dt) => { if (state === 'playing') updateGame(dt || 1 / 60); render(); },
   damagePlayer: (n) => damagePlayer(n, player.x, player.y + 80),
   heal: () => { player.hp = player.maxHp; player.invuln = 0; player.frozen = 0; },
   setInvuln: (n) => { player.invuln = n; },
+  godMode: (on) => { godMode = !!on; },
   setHp: (n) => { player.hp = clamp(n, 0, player.maxHp); },
   drop: () => dropBomb(),
   placePlayer: (x, y) => { if (player) { player.x = x; player.y = y; clampPlayer(); } },
   stepPlayer: (dx, dy) => { if (player && state === 'playing' && player.frozen <= 0) { player.x += dx; player.y += dy; clampPlayer(); } },
   spawnBombNear: (x, y) => { bombs.push({ x, y, px: x, py: y, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: 0 }); },
   spawnHammerAt: (col) => spawnHammerAt(col == null ? 0 : col),
-  setHammerTimer: (t) => { hammerTimer = t; },
+  setHammerEventTimer: (t) => { hammerEventTimer = Math.max(0, t); },
+  setElapsed: (t) => { elapsed = Math.max(0, t); },
+  setSpawnPause: (t) => { spawnPauseUntil = Math.max(0, t); },
   bombInfo: () => bombs.map(b => ({ x: b.x, y: b.y, px: b.px, py: b.py, carried: b.carried })),
   explodeAt: (x, y) => {
     const b = { x, y, px: x, py: y, r: 11, vy: 0, vx: 0, carried: false, noPickup: 0, exploded: false, wob: 0 };
@@ -3022,8 +3101,16 @@ window.__DODGE = {
   mobInfo: () => mobs.map(m => ({ type: m.type, name: m.name, x: m.x, y: m.y, r: m.r, hp: m.hp, maxHp: m.maxHp, frozen: m.frozen, state: m.state, small: m.small })),
   setMobFrozen: (i, n) => { if (mobs[i]) mobs[i].frozen = n !== undefined ? n : 3; },
   eshotInfo: () => eshots.map(e => ({ kind: e.kind, x: e.x, y: e.y, vx: e.vx, vy: e.vy, life: e.life })),
-  setWave: (type, dur) => { waveType = type; waveTimer = dur !== undefined ? dur : 10; onWaveStart(type); },
-  waveInfo: () => ({ type: waveType, timer: waveTimer }),
+  flowInfo: () => ({
+    elapsed, phase, hammerSpawns, hammerEventTimer: Math.max(0, hammerEventTimer),
+    hammerEventActive, spawnPauseUntil, hammersOnScreen: hammers.length,
+    bossSpawned, bossDefeated,
+    nextHammerAt: (phase < 4 && !bossDefeated) ? (hammerSpawns === 0 ? HAMMER_EVENT_T1 : hammerSpawns === 1 ? HAMMER_EVENT_T2 : null) : null
+  }),
+  startMinionRetreat: (fast) => startMinionRetreat(!!fast),
+  forceHammerRetreat: (col) => { const h = hammers.find(x => x.col === col); if (h) { h.state = 'retreat'; h.timer = HAMMER_RETREAT_DUR; } },
+  popupTexts: () => popups.map(p => p.text),
+  particleInfo: () => particles.map(p => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, life: p.life })),
   grantShield: () => { if (player) player.shieldUp = true; },
   shieldInfo: () => ({ shieldUp: !!player.shieldUp, invuln: player ? player.invuln : 0, shieldDur: player ? player.shield : 0 }),
   clearEnemies: () => { hammers = []; turrets = []; snakes = []; bullets = []; spikes = []; mobs = []; eshots = []; grubs = []; },
@@ -3082,7 +3169,7 @@ window.__DODGE = {
     bossHp: totalBossHp(), bossMaxHp, bossSegs: snakes.reduce((t, s) => t + s.segments.length, 0),
     bossDefeated, bossSpawned, frozen: player ? player.frozen : 0, invuln: player ? player.invuln : 0,
     shieldUp: player ? player.shieldUp : false, pinned: playerPinned(),
-    waveType, waveTimer: Math.max(0, waveTimer),
+    hammerSpawns, hammerEventTimer: Math.max(0, hammerEventTimer), hammerEventActive,
     hint: hintText,
     orbs: orbs.length, energy: Math.floor(energy), pityActive,
     hammerCols: hammers.map(h => h.col),
